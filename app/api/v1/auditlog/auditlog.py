@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from tortoise.expressions import Q
+from datetime import datetime
 
 from app.models.admin import AuditLog
 from app.schemas import SuccessExtra
@@ -7,6 +8,11 @@ from app.schemas.apis import *
 
 router = APIRouter()
 
+def parse_datetime(date_string: str) -> datetime:
+    try:
+        return datetime.strptime(date_string, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的日期时间格式，请使用 YYYY-MM-DD HH:MM:SS 格式")
 
 @router.get("/list", summary="查看操作日志")
 async def get_audit_log_list(
@@ -32,11 +38,15 @@ async def get_audit_log_list(
     if status:
         q &= Q(status=status)
     if start_time and end_time:
-        q &= Q(created_at__range=[start_time, end_time])
+        start_datetime = parse_datetime(start_time)
+        end_datetime = parse_datetime(end_time)
+        q &= Q(created_at__range=[start_datetime, end_datetime])
     elif start_time:
-        q &= Q(created_at__gte=start_time)
+        start_datetime = parse_datetime(start_time)
+        q &= Q(created_at__gte=start_datetime)
     elif end_time:
-        q &= Q(created_at__lte=end_time)
+        end_datetime = parse_datetime(end_time)
+        q &= Q(created_at__lte=end_datetime)
 
     audit_log_objs = await AuditLog.filter(q).offset((page - 1) * page_size).limit(page_size).order_by("-created_at")
     total = await AuditLog.filter(q).count()
