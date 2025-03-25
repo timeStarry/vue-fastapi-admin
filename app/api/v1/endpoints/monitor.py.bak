@@ -1,0 +1,345 @@
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, WebSocket, Query, Depends
+from tortoise.expressions import Q
+from app.controllers.monitor import (
+    asset_category_controller, asset_controller, host_asset_controller,
+    service_asset_controller, asset_alert_controller, monitor_controller
+)
+from app.schemas.monitor import (
+    AssetCategoryCreate, AssetCategoryUpdate, AssetCategoryInDB,
+    AssetCreate, AssetUpdate, AssetInDB,
+    HostAssetCreate, HostAssetUpdate, HostAssetInDB,
+    ServiceAssetCreate, ServiceAssetUpdate, ServiceAssetInDB,
+    AssetAlertCreate, AssetAlertUpdate, AssetAlertInDB
+)
+from app.schemas import Success, SuccessExtra
+from app.core.dependency import DependAuth
+import json
+
+router = APIRouter()
+
+# 资产分类相关路由
+@router.get("/categories", summary="获取资产分类列表")
+async def get_categories(
+    auth: dict = Depends(DependAuth)
+):
+    """获取资产分类列表"""
+    data = await asset_category_controller.get_all()
+    return Success(data=data)
+
+@router.post("/categories", summary="创建资产分类")
+async def create_category(
+    obj_in: AssetCategoryCreate,
+    auth: dict = Depends(DependAuth)
+):
+    """创建资产分类"""
+    await asset_category_controller.create(obj_in=obj_in)
+    return Success(msg="Created Successfully")
+
+@router.put("/categories/{category_id}", summary="更新资产分类")
+async def update_category(
+    category_id: int,
+    obj_in: AssetCategoryUpdate,
+    auth: dict = Depends(DependAuth)
+):
+    """更新资产分类"""
+    await asset_category_controller.update(id=category_id, obj_in=obj_in)
+    return Success(msg="Update Successfully")
+
+@router.delete("/categories/{category_id}", summary="删除资产分类")
+async def delete_category(
+    category_id: int,
+    auth: dict = Depends(DependAuth)
+):
+    """删除资产分类"""
+    await asset_category_controller.remove(id=category_id)
+    return Success(msg="Deleted Success")
+
+# 资产相关路由
+@router.get("/assets", summary="获取资产列表")
+async def get_assets(
+    category_id: int = Query(None, description="分类ID"),
+    status: int = Query(None, description="资产状态"),
+    name: str = Query(None, description="资产名称"),
+    type: int = Query(None, description="资产类型"),
+    page: int = Query(1, description="页码"),
+    page_size: int = Query(10, description="每页数量"),
+    auth: dict = Depends(DependAuth)
+):
+    """获取资产列表"""
+    q = Q()
+    if category_id:
+        q &= Q(category_id=category_id)
+    if status:
+        q &= Q(status=status)
+    if name:
+        q &= Q(name__contains=name)
+    if type:
+        q &= Q(type=type)
+    
+    total, assets = await asset_controller.list(
+        page=page,
+        page_size=page_size,
+        search=q,
+        order=["-created_at"]
+    )
+    data = [await obj.to_dict() for obj in assets]
+    return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
+
+@router.post("/assets", summary="创建资产")
+async def create_asset(
+    obj_in: AssetCreate,
+    auth: dict = Depends(DependAuth)
+):
+    """创建资产"""
+    await asset_controller.create_asset(obj_in=obj_in)
+    return Success(msg="Created Successfully")
+
+@router.put("/assets/{asset_id}", summary="更新资产")
+async def update_asset(
+    asset_id: int,
+    obj_in: AssetUpdate,
+    auth: dict = Depends(DependAuth)
+):
+    """更新资产"""
+    await asset_controller.update_asset(id=asset_id, obj_in=obj_in)
+    return Success(msg="Update Successfully")
+
+@router.delete("/assets/{asset_id}", summary="删除资产")
+async def delete_asset(
+    asset_id: int,
+    auth: dict = Depends(DependAuth)
+):
+    """删除资产"""
+    await asset_controller.remove(id=asset_id)
+    return Success(msg="Deleted Success")
+
+# 主机资产相关路由
+@router.post("/hosts", summary="创建主机资产")
+async def create_host(
+    obj_in: HostAssetCreate,
+    auth: dict = Depends(DependAuth)
+):
+    """创建主机资产"""
+    # 验证资产类型
+    asset = await asset_controller.get(id=obj_in.asset_id)
+    if asset.type != 1:  # 1表示主机类型
+        raise HTTPException(status_code=400, detail="资产类型不是主机")
+    await host_asset_controller.create(obj_in=obj_in)
+    return Success(msg="Created Successfully")
+
+@router.put("/hosts/{host_id}", summary="更新主机资产")
+async def update_host(
+    host_id: int,
+    obj_in: HostAssetUpdate,
+    auth: dict = Depends(DependAuth)
+):
+    """更新主机资产"""
+    await host_asset_controller.update(id=host_id, obj_in=obj_in)
+    return Success(msg="Update Successfully")
+
+@router.get("/hosts/{asset_id}", summary="获取主机资产信息")
+async def get_host(
+    asset_id: int,
+    auth: dict = Depends(DependAuth)
+):
+    """获取主机资产信息"""
+    host = await host_asset_controller.get_host_asset(asset_id)
+    if not host:
+        raise HTTPException(status_code=404, detail="主机资产不存在")
+    data = await host.to_dict()
+    return Success(data=data)
+
+@router.post("/hosts/{asset_id}/check", summary="检查主机状态")
+async def check_host(
+    asset_id: int,
+    auth: dict = Depends(DependAuth)
+):
+    """检查主机状态"""
+    host = await host_asset_controller.get_host_asset(asset_id)
+    if not host:
+        raise HTTPException(status_code=404, detail="主机资产不存在")
+    data = await host_asset_controller.check_host_status(host)
+    return Success(data=data)
+
+# 服务资产相关路由
+@router.post("/services", summary="创建服务资产")
+async def create_service(
+    obj_in: ServiceAssetCreate,
+    auth: dict = Depends(DependAuth)
+):
+    """创建服务资产"""
+    # 验证资产类型
+    asset = await asset_controller.get(id=obj_in.asset_id)
+    if asset.type != 2:  # 2表示服务类型
+        raise HTTPException(status_code=400, detail="资产类型不是服务")
+    await service_asset_controller.create(obj_in=obj_in)
+    return Success(msg="Created Successfully")
+
+@router.put("/services/{service_id}", summary="更新服务资产")
+async def update_service(
+    service_id: int,
+    obj_in: ServiceAssetUpdate,
+    auth: dict = Depends(DependAuth)
+):
+    """更新服务资产"""
+    await service_asset_controller.update(id=service_id, obj_in=obj_in)
+    return Success(msg="Update Successfully")
+
+@router.get("/services/{asset_id}", summary="获取服务资产信息")
+async def get_service(
+    asset_id: int,
+    auth: dict = Depends(DependAuth)
+):
+    """获取服务资产信息"""
+    service = await service_asset_controller.get_service_asset(asset_id)
+    if not service:
+        raise HTTPException(status_code=404, detail="服务资产不存在")
+    data = await service.to_dict()
+    return Success(data=data)
+
+@router.post("/services/{asset_id}/check", summary="检查服务状态")
+async def check_service(
+    asset_id: int,
+    auth: dict = Depends(DependAuth)
+):
+    """检查服务状态"""
+    service = await service_asset_controller.get_service_asset(asset_id)
+    if not service:
+        raise HTTPException(status_code=404, detail="服务资产不存在")
+    data = await service_asset_controller.check_service_status(service)
+    return Success(data=data)
+
+# 告警相关路由
+@router.get("/alerts", summary="获取告警列表")
+async def get_alerts(
+    asset_id: int = Query(None, description="资产ID"),
+    alert_type: int = Query(None, description="告警类型"),
+    alert_level: int = Query(None, description="告警级别"),
+    is_resolved: bool = Query(None, description="是否已解决"),
+    page: int = Query(1, description="页码"),
+    page_size: int = Query(10, description="每页数量"),
+    auth: dict = Depends(DependAuth)
+):
+    """获取告警列表"""
+    q = Q()
+    if asset_id:
+        q &= Q(asset_id=asset_id)
+    if alert_type:
+        q &= Q(alert_type=alert_type)
+    if alert_level:
+        q &= Q(alert_level=alert_level)
+    if is_resolved is not None:
+        q &= Q(is_resolved=is_resolved)
+    
+    total, alerts = await asset_alert_controller.list(
+        page=page,
+        page_size=page_size,
+        search=q,
+        order=["-created_at"]
+    )
+    data = [await obj.to_dict() for obj in alerts]
+    return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
+
+@router.post("/alerts", summary="创建告警")
+async def create_alert(
+    obj_in: AssetAlertCreate,
+    auth: dict = Depends(DependAuth)
+):
+    """创建告警"""
+    await asset_alert_controller.create_alert(obj_in=obj_in)
+    return Success(msg="Created Successfully")
+
+@router.put("/alerts/{alert_id}", summary="更新告警")
+async def update_alert(
+    alert_id: int,
+    obj_in: AssetAlertUpdate,
+    auth: dict = Depends(DependAuth)
+):
+    """更新告警"""
+    await asset_alert_controller.update(id=alert_id, obj_in=obj_in)
+    return Success(msg="Update Successfully")
+
+@router.post("/alerts/{alert_id}/resolve", summary="解决告警")
+async def resolve_alert(
+    alert_id: int,
+    auth: dict = Depends(DependAuth)
+):
+    """解决告警"""
+    await asset_alert_controller.resolve_alert(alert_id)
+    return Success(msg="Resolved Successfully")
+
+# 批量检查相关路由
+@router.post("/check/hosts", summary="检查所有主机状态")
+async def check_all_hosts(
+    auth: dict = Depends(DependAuth)
+):
+    """检查所有主机状态"""
+    data = await monitor_controller.check_all_hosts()
+    return Success(data=data)
+
+@router.post("/check/services", summary="检查所有服务状态")
+async def check_all_services(
+    auth: dict = Depends(DependAuth)
+):
+    """检查所有服务状态"""
+    data = await monitor_controller.check_all_services()
+    return Success(data=data)
+
+@router.post("/check/all", summary="检查所有资产状态")
+async def check_all_assets(
+    auth: dict = Depends(DependAuth)
+):
+    """检查所有资产状态"""
+    data = await monitor_controller.check_all_assets()
+    return Success(data=data)
+
+# # WebSocket连接处理
+# @router.websocket("/ws")
+# async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket连接处理"""
+    # 获取认证信息
+    try:
+        token = websocket.query_params.get("token")
+        if not token:
+            await websocket.close(code=4001, reason="未提供认证令牌")
+            return
+            
+        # 验证token
+        payload = await verify_token(token)
+        if not payload:
+            await websocket.close(code=4003, reason="认证失败")
+            return
+    except Exception as e:
+        await websocket.close(code=4003, reason=f"认证错误: {str(e)}")
+        return
+
+    await websocket.accept()
+    try:
+        while True:
+            # 接收客户端消息
+            data = await websocket.receive_text()
+            try:
+                message = json.loads(data)
+                action = message.get("action")
+                
+                # 根据action执行相应的操作
+                if action == "check_hosts":
+                    results = await monitor_controller.check_all_hosts()
+                    await websocket.send_json({"type": "hosts", "data": results})
+                elif action == "check_services":
+                    results = await monitor_controller.check_all_services()
+                    await websocket.send_json({"type": "services", "data": results})
+                elif action == "check_all":
+                    results = await monitor_controller.check_all_assets()
+                    await websocket.send_json({"type": "all", "data": results})
+                else:
+                    await websocket.send_json({"error": "未知的操作类型"})
+            except json.JSONDecodeError:
+                await websocket.send_json({"error": "无效的JSON格式"})
+            except Exception as e:
+                await websocket.send_json({"error": str(e)})
+    except Exception as e:
+        print(f"WebSocket错误: {str(e)}")
+    finally:
+        await websocket.close() 
