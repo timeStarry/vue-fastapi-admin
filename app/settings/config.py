@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     TORTOISE_ORM: dict = {
         "connections": {
             # SQLite configuration
+            # TODO: 开发期间暂时使用sqlite,后续部署采用pgsql
             "sqlite": {
                 "engine": "tortoise.backends.sqlite",
                 "credentials": {"file_path": f"{BASE_DIR}/db.sqlite3"},  # Path to SQLite database file
