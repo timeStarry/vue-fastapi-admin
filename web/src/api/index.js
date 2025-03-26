@@ -39,4 +39,10 @@ export default {
   deleteDept: (params = {}) => request.delete('/dept/delete', { params }),
   // auditlog
   getAuditLogList: (params = {}) => request.get('/auditlog/list', { params }),
+  // 工单管理
+  getTicketList: async (params) => await request.get('ticket/list', { params }),
+  createTicket: async (data) => await request.post('ticket/create', data),
+  updateTicket: async (data) => await request.put(`ticket/${data.id}`, data),
+  closeTicket: async (data) => await request.delete(`ticket/${data.id}`, data),
+  getTicketDetail: async (id) => await request.get(`ticket/${id}`),
 }
