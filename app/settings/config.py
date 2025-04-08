@@ -1,94 +1,90 @@
 import os
 import typing
-
 from pydantic_settings import BaseSettings
+from pathlib import Path
 
 
 class Settings(BaseSettings):
     VERSION: str = "0.1.0"
-    APP_TITLE: str = "Vue FastAPI Admin"
-    PROJECT_NAME: str = "Vue FastAPI Admin"
-    APP_DESCRIPTION: str = "Description"
+    APP_TITLE: str
+    PROJECT_NAME: str
+    APP_DESCRIPTION: str
+    DEBUG: bool
 
-    CORS_ORIGINS: typing.List = ["*"]
-    CORS_ALLOW_CREDENTIALS: bool = True
-    CORS_ALLOW_METHODS: typing.List = ["*"]
-    CORS_ALLOW_HEADERS: typing.List = ["*"]
+    # 安全配置
+    SECRET_KEY: str
+    JWT_ALGORITHM: str
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int
 
-    DEBUG: bool = True
+    # 数据库配置
+    DB_ENGINE: str
+    DB_HOST: str
+    DB_PORT: int
+    DB_USER: str
+    DB_PASSWORD: str
+    DB_NAME: str
 
-    PROJECT_ROOT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-    BASE_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, os.pardir))
-    LOGS_ROOT: str = os.path.join(BASE_DIR, "app/logs")
-    SECRET_KEY: str = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"  # openssl rand -hex 32
-    JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 day
-    TORTOISE_ORM: dict = {
-        "connections": {
-            # SQLite configuration
-            "sqlite": {
-                "engine": "tortoise.backends.sqlite",
-                "credentials": {"file_path": f"{BASE_DIR}/db.sqlite3"},  # Path to SQLite database file
-            },
-            # MySQL/MariaDB configuration
-            # Install with: tortoise-orm[asyncmy]
-            # "mysql": {
-            #     "engine": "tortoise.backends.mysql",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 3306,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
-            # PostgreSQL configuration
-            # Install with: tortoise-orm[asyncpg]
-            # "postgres": {
-            #     "engine": "tortoise.backends.asyncpg",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 5432,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
-            # MSSQL/Oracle configuration
-            # Install with: tortoise-orm[asyncodbc]
-            # "oracle": {
-            #     "engine": "tortoise.backends.asyncodbc",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 1433,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
-            # SQLServer configuration
-            # Install with: tortoise-orm[asyncodbc]
-            # "sqlserver": {
-            #     "engine": "tortoise.backends.asyncodbc",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 1433,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
-        },
-        "apps": {
-            "models": {
-                "models": ["app.models", "aerich.models"],
-                "default_connection": "sqlite",
-            },
-        },
-        "use_tz": False,  # Whether to use timezone-aware datetimes
-        "timezone": "Asia/Shanghai",  # Timezone setting
-    }
+    # Redis配置
+    REDIS_HOST: str
+    REDIS_PORT: int
+    REDIS_PASSWORD: str
+    REDIS_DB: int
+
+    # CORS配置
+    CORS_ORIGINS: typing.List[str]
+    CORS_ALLOW_CREDENTIALS: bool
+    CORS_ALLOW_METHODS: typing.List[str]
+    CORS_ALLOW_HEADERS: typing.List[str]
+
+    # 路径配置
+    ROOT_DIR: Path = Path(__file__).parent.parent.parent  # 指向项目根目录
+    APP_DIR: Path = ROOT_DIR / "app"
+    LOGS_DIR: Path = APP_DIR / "logs"
+
+    # 时区配置
+    TIMEZONE: str = "Asia/Shanghai"
     DATETIME_FORMAT: str = "%Y-%m-%d %H:%M:%S"
+
+    # 日志配置
+    LOG_LEVEL: str = "INFO"
+    LOGS_ROOT: str = "app/logs"
+
+    # 构建 TORTOISE_ORM 配置
+    @property
+    def TORTOISE_ORM(self) -> dict:
+        return {
+            "connections": {
+                "default": {
+                    "engine": self.DB_ENGINE,
+                    "credentials": {
+                        "host": self.DB_HOST,
+                        "port": self.DB_PORT,
+                        "user": self.DB_USER,
+                        "password": self.DB_PASSWORD,
+                        "database": self.DB_NAME,
+                    },
+                },
+            },
+            "apps": {
+                "models": {
+                    "models": [
+                        "app.models.user",
+                        "app.models.role",
+                        "app.models.menu",
+                        "app.models.api",
+                        "aerich.models"
+                    ],
+                    "default_connection": "default",
+                },
+            },
+            "use_tz": False,
+            "timezone": self.TIMEZONE,
+        }
+
+    class Config:
+        # 使用字符串路径或直接计算路径
+        env_file = str(Path(__file__).parent.parent.parent / ".env")  # 明确指定 .env 文件位置
+        case_sensitive = True
 
 
 settings = Settings()

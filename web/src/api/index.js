@@ -39,4 +39,23 @@ export default {
   deleteDept: (params = {}) => request.delete('/dept/delete', { params }),
   // auditlog
   getAuditLogList: (params = {}) => request.get('/auditlog/list', { params }),
+  // monitor_host_group
+  getHostGroups: () => request.get('/monitor/host/groups'),
+  createHostGroup: (data = {}) => request.post('/monitor/host/group/create', data),
+  updateHostGroup: (data = {}) => request.post(`/monitor/host/group/${data.id}`, data),
+  deleteHostGroup: (params = {}) => request.delete(`/monitor/host/group/${params.id}`),
+  setDefaultHostGroup: (params = {}) => request.post(`/monitor/host/group/${params.id}/set-default`),
+  // monitor_host
+  getMonitorHostList: (params = {}) => request.get('/monitor/host/list', { params }),
+  createMonitorHost: (data = {}) => request.post('/monitor/host/create', data),
+  updateMonitorHost: (data = {}) => request.post(`/monitor/host/${data.id}`, data),
+  deleteMonitorHost: (params = {}) => request.delete(`/monitor/host/${params.id}`),
+  testHostConnection: (data = {}) => request.post('/monitor/host/test-connection', data),
+  // 工单相关接口
+  getTicketList: (params = {}) => request.get('/ticket/list', { params }),
+  createTicket: (data = {}) => request.post('/ticket/create', data),
+  updateTicket: (data = {}) => request.post('/ticket/update', data),
+  deleteTicket: (params = {}) => request.delete('/ticket/delete', { params }),
+  getTicketComments: (params = {}) => request.get('/ticket/comments', { params }),
+  createTicketComment: (data = {}) => request.post('/ticket/comment/create', data),
 }

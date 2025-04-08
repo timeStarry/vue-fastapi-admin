@@ -23,6 +23,7 @@ from app.core.exceptions import (
 )
 from app.log import logger
 from app.models.admin import Api, Menu, Role
+from app.models.monitor import HostGroup
 from app.schemas.menus import MenuType
 from app.settings.config import settings
 
@@ -225,9 +226,20 @@ async def init_roles():
         await user_role.apis.add(*basic_apis)
 
 
+async def init_monitor():
+    default_group = await HostGroup.filter(is_default=True).exists()
+    if not default_group:
+        await HostGroup.create(
+            name="默认分组",
+            is_default=True,
+            remark="系统默认分组"
+        )
+
+
 async def init_data():
     await init_db()
     await init_superuser()
     await init_menus()
     await init_apis()
     await init_roles()
+    await init_monitor()
