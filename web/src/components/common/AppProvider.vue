@@ -35,6 +35,7 @@ import { kebabCase } from 'lodash-es'
 import { setupMessage, setupDialog } from '@/utils'
 import { naiveThemeOverrides } from '~/settings'
 import { useAppStore } from '@/store'
+import { setupNotification } from '@/utils/notification'
 
 const appStore = useAppStore()
 
@@ -50,9 +51,9 @@ function setupCssVar() {
 function setupNaiveTools() {
   window.$loadingBar = useLoadingBar()
   window.$notification = useNotification()
-
   window.$message = setupMessage(useMessage())
   window.$dialog = setupDialog(useDialog())
+  window.$notify = setupNotification(useNotification())
 }
 
 const NaiveProviderContent = defineComponent({

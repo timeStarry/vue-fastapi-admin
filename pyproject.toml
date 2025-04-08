@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Vue Fastapi admin"
 authors = [
     {name = "mizhexiaoxiao", email = "mizhexiaoxiao@gmail.com"},
+    {name = "timestarry", email = "timestarry@qq.com"}
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -69,6 +70,8 @@ dependencies = [
     "websockets==14.1",
     "pyproject-toml>=0.1.0",
     "uvloop==0.21.0 ; sys_platform != 'win32'",
+    "asyncpg>=0.30.0",
+    "asyncssh>=2.20.0",
 ]
 
 [tool.black]

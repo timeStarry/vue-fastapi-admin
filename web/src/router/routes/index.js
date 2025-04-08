@@ -116,6 +116,24 @@ export const basicRoutes = [
       title: '登录页',
     },
   },
+  {
+    name: '工单管理',
+    path: '/ticket',
+    component: Layout,
+    children: [
+      {
+        path: '',
+        component: () => import('@/views/ticket/index.vue'),
+        name: 'TicketDefault',
+        meta: {
+          title: '工单管理',
+          icon: 'material-symbols:ticket',
+          affix: true,
+        },
+      },
+    ],
+    meta: { order: 3 },
+  },
 ]
 
 export const NOT_FOUND_ROUTE = {
