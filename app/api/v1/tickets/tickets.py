@@ -14,6 +14,7 @@ from app.models.admin import User
 router = APIRouter()
 
 @router.get("/list", summary="获取工单列表")
+
 async def get_ticket_list(
     page: int = Query(1, description="页码"),
     page_size: int = Query(10, description="每页数量"),
