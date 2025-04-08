@@ -8,8 +8,8 @@ import subprocess
 from typing import Optional, List, Dict, Any
 
 from app.core.crud import CRUDBase
-from app.models.monitor import Asset, AssetCategory, AssetAlert, HostAsset, ServiceAsset
-from app.schemas.monitor import (
+from app.models.admin import Asset, AssetCategory, AssetAlert, HostAsset, ServiceAsset
+from app.schemas.assets import (
     AssetCreate, AssetUpdate, AssetCategoryCreate, AssetCategoryUpdate,
     AssetAlertCreate, AssetAlertUpdate, HostAssetCreate, HostAssetUpdate,
     ServiceAssetCreate, ServiceAssetUpdate
@@ -259,65 +259,8 @@ class AssetAlertController(CRUDBase[AssetAlert, AssetAlertCreate, AssetAlertUpda
         await alert.save()
 
 
-class MonitorController:
-    """监控控制器"""
-    
-    @staticmethod
-    async def check_all_hosts() -> List[Dict[str, Any]]:
-        """检查所有主机状态"""
-        hosts = await HostAsset.all()
-        results = []
-        for host in hosts:
-            try:
-                result = await host_asset_controller.check_host_status(host)
-                results.append({
-                    "asset_id": host.asset_id,
-                    "ip_address": host.ip_address,
-                    **result
-                })
-            except Exception as e:
-                results.append({
-                    "asset_id": host.asset_id,
-                    "ip_address": host.ip_address,
-                    "error": str(e)
-                })
-            await asyncio.sleep(0.5)  # 避免同时发送太多ping请求
-        return results
-
-    @staticmethod
-    async def check_all_services() -> List[Dict[str, Any]]:
-        """检查所有服务状态"""
-        services = await ServiceAsset.all()
-        results = []
-        for service in services:
-            try:
-                result = await service_asset_controller.check_service_status(service)
-                results.append({
-                    "asset_id": service.asset_id,
-                    "url": service.url,
-                    **result
-                })
-            except Exception as e:
-                results.append({
-                    "asset_id": service.asset_id,
-                    "url": service.url,
-                    "error": str(e)
-                })
-            await asyncio.sleep(0.5)  # 避免同时发送太多HTTP请求
-        return results
-
-    @staticmethod
-    async def check_all_assets() -> Dict[str, List[Dict[str, Any]]]:
-        """检查所有资产状态"""
-        return {
-            "hosts": await MonitorController.check_all_hosts(),
-            "services": await MonitorController.check_all_services()
-        }
-
-
 asset_category_controller = AssetCategoryController()
 asset_controller = AssetController()
 host_asset_controller = HostAssetController()
 service_asset_controller = ServiceAssetController()
-asset_alert_controller = AssetAlertController()
-monitor_controller = MonitorController() 
+asset_alert_controller = AssetAlertController() 
