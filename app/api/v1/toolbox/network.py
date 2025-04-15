@@ -153,13 +153,13 @@ async def traceroute(
 ):
     """执行路由追踪"""
     try:
-        # 根据操作系统选择traceroute命令
         if platform.system().lower() == "windows":
+            # Windows 使用 tracert 命令
             cmd = ["tracert", "-h", str(max_hops), "-w", str(int(timeout * 1000)), host]
         else:
+            # Linux/Unix 使用 traceroute 命令
             cmd = ["traceroute", "-m", str(max_hops), "-w", str(timeout), host]
         
-        # 执行traceroute命令
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -168,44 +168,38 @@ async def traceroute(
         stdout, stderr = await process.communicate()
         
         if process.returncode != 0:
-            return Success(code=400, msg="路由追踪失败", data={
-                "host": host,
-                "error": stderr.decode()
-            })
+            raise HTTPException(status_code=400, detail=f"Traceroute failed: {stderr.decode()}")
         
-        # 解析traceroute结果
-        result = stdout.decode()
-        if platform.system().lower() == "windows":
-            # Windows tracert结果解析
-            hops = []
-            for line in result.split("\n"):
-                if line.strip() and not line.startswith("通过"):
-                    parts = line.split()
-                    if len(parts) >= 8:
-                        hop = {
-                            "hop": int(parts[0]),
-                            "ip": parts[1],
-                            "times": [float(t) for t in parts[2:] if t != "*"]
-                        }
-                        hops.append(hop)
-        else:
-            # Linux/Unix traceroute结果解析
-            hops = []
-            for line in result.split("\n"):
-                if line.strip() and not line.startswith("traceroute"):
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        hop = {
-                            "hop": int(parts[0]),
-                            "ip": parts[1],
-                            "times": [float(t) for t in parts[2:] if t != "*"]
-                        }
-                        hops.append(hop)
+        # 解析输出结果
+        hops = []
+        for line in stdout.decode().split("\n"):
+            if line.strip():
+                if platform.system().lower() == "windows":
+                    # Windows tracert 输出格式解析
+                    match = re.match(r"\s*(\d+)\s+(\d+ ms)\s+(\d+ ms)\s+(\d+ ms)\s+(.*)", line)
+                    if match:
+                        hop_num, t1, t2, t3, ip = match.groups()
+                        hops.append({
+                            "hop": int(hop_num),
+                            "ip": ip.strip(),
+                            "times": [t1, t2, t3]
+                        })
+                else:
+                    # Linux traceroute 输出格式解析
+                    match = re.match(r"\s*(\d+)\s+(.*?)\s+(\d+\.\d+ ms)", line)
+                    if match:
+                        hop_num, ip, time = match.groups()
+                        hops.append({
+                            "hop": int(hop_num),
+                            "ip": ip.strip(),
+                            "times": [time]
+                        })
         
         return Success(data={
             "host": host,
-            "hops": hops,
-            "raw": result
+            "max_hops": max_hops,
+            "timeout": timeout,
+            "hops": hops
         })
     except Exception as e:
-        return Success(code=400, msg="路由追踪失败", data={"error": str(e)}) 
+        raise HTTPException(status_code=400, detail=str(e)) 
