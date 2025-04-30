@@ -39,4 +39,30 @@ export default {
   deleteDept: (params = {}) => request.delete('/dept/delete', { params }),
   // auditlog
   getAuditLogList: (params = {}) => request.get('/auditlog/list', { params }),
+  
+  // 工单模块API
+  // 工单列表与基础操作
+  getTicketList: (params = {}) => request.get('/ticket/list', { params }),
+  getTicketById: (params = {}) => request.get('/ticket/get', { params }),
+  createTicket: (data = {}) => request.post('/ticket/create', data),
+  updateTicket: (data = {}) => request.post('/ticket/update', data),
+  deleteTicket: (params = {}) => request.delete('/ticket/delete', { params }),
+  
+  // 工单处理操作
+  processTicket: (data = {}) => request.post('/ticket/process', data),
+  transferTicket: (data = {}) => request.post('/ticket/transfer', data),
+  
+  // 工单附件上传
+  uploadAttachment: (data = {}, onUploadProgress) => 
+    request.post('/ticket/upload', data, { 
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    }),
+  
+  // 工单统计数据
+  getTicketStatistics: (params = {}) => request.get('/ticket/statistics', { params }),
+  
+  // 网络设备相关API (假设将来会实现)
+  getDeviceList: (params = {}) => request.get('/device/list', { params }),
+  getDeviceById: (params = {}) => request.get('/device/get', { params }),
 }

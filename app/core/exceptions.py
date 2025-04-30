@@ -12,6 +12,14 @@ class SettingNotFound(Exception):
     pass
 
 
+class CustomException(Exception):
+    """自定义业务异常"""
+    def __init__(self, message: str, code: int = 400):
+        self.message = message
+        self.code = code
+        super().__init__(self.message)
+
+
 async def DoesNotExistHandle(req: Request, exc: DoesNotExist) -> JSONResponse:
     content = dict(
         code=404,
@@ -31,6 +39,11 @@ async def IntegrityHandle(_: Request, exc: IntegrityError) -> JSONResponse:
 async def HttpExcHandle(_: Request, exc: HTTPException) -> JSONResponse:
     content = dict(code=exc.status_code, msg=exc.detail, data=None)
     return JSONResponse(content=content, status_code=exc.status_code)
+
+
+async def CustomExceptionHandle(_: Request, exc: CustomException) -> JSONResponse:
+    content = dict(code=exc.code, msg=exc.message, data=None)
+    return JSONResponse(content=content, status_code=exc.code)
 
 
 async def RequestValidationHandle(_: Request, exc: RequestValidationError) -> JSONResponse:
