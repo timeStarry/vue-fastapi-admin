@@ -8,7 +8,7 @@ import { OUTPUT_DIR, PROXY_CONFIG } from './build/constant'
 export default defineConfig(({ command, mode }) => {
   const srcPath = getSrcPath()
   const rootPath = getRootPath()
-  const isBuild = command === 'build'
+  const isBuild = command === 'build' 
 
   const env = loadEnv(mode, process.cwd())
   const viteEnv = convertEnv(env)
