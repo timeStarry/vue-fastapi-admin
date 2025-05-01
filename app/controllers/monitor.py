@@ -3,7 +3,12 @@ import datetime
 import subprocess
 import re
 import aiohttp
+import random
+import concurrent.futures
 from typing import List, Dict, Optional, Any, Union
+
+# 移除SNMP相关模块导入
+# 改为使用模拟数据
 
 from app.models.monitor import (
     MonitorHost, MonitorHostRecord, MonitorMRTGData,
@@ -15,6 +20,53 @@ from app.schemas.monitor import (
     DashboardData, AlertUpdate
 )
 
+# 替换为系统日志
+from app.log import logger
+
+# SNMP常用OID定义
+SNMP_OIDS = {
+    # 接口信息
+    "ifNumber": "1.3.6.1.2.1.2.1.0",                # 接口数量
+    "ifTable": "1.3.6.1.2.1.2.2",                   # 接口表
+    "ifEntry": "1.3.6.1.2.1.2.2.1",                 # 接口表条目
+    "ifIndex": "1.3.6.1.2.1.2.2.1.1",               # 接口索引
+    "ifDescr": "1.3.6.1.2.1.2.2.1.2",               # 接口描述
+    "ifType": "1.3.6.1.2.1.2.2.1.3",                # 接口类型
+    "ifMtu": "1.3.6.1.2.1.2.2.1.4",                 # 接口MTU
+    "ifSpeed": "1.3.6.1.2.1.2.2.1.5",               # 接口速度
+    "ifPhysAddress": "1.3.6.1.2.1.2.2.1.6",         # 接口物理地址
+    "ifAdminStatus": "1.3.6.1.2.1.2.2.1.7",         # 接口管理状态
+    "ifOperStatus": "1.3.6.1.2.1.2.2.1.8",          # 接口操作状态
+    "ifInOctets": "1.3.6.1.2.1.2.2.1.10",           # 接口入字节数
+    "ifInUcastPkts": "1.3.6.1.2.1.2.2.1.11",        # 接口入单播包数
+    "ifInErrors": "1.3.6.1.2.1.2.2.1.14",           # 接口入错误数
+    "ifOutOctets": "1.3.6.1.2.1.2.2.1.16",          # 接口出字节数
+    "ifOutUcastPkts": "1.3.6.1.2.1.2.2.1.17",       # 接口出单播包数
+    "ifOutErrors": "1.3.6.1.2.1.2.2.1.20",          # 接口出错误数
+    
+    # 系统信息
+    "sysDescr": "1.3.6.1.2.1.1.1.0",                # 系统描述
+    "sysUpTime": "1.3.6.1.2.1.1.3.0",               # 系统运行时间
+    "sysName": "1.3.6.1.2.1.1.5.0",                 # 系统名称
+    
+    # CPU和内存
+    "hrProcessorLoad": "1.3.6.1.2.1.25.3.3.1.2",    # CPU负载(HOST-RESOURCES-MIB)
+    "memTotalReal": "1.3.6.1.4.1.2021.4.5.0",       # 物理内存总量(UCD-SNMP-MIB)
+    "memAvailReal": "1.3.6.1.4.1.2021.4.6.0",       # 可用物理内存(UCD-SNMP-MIB)
+    "memTotalFree": "1.3.6.1.4.1.2021.4.11.0",      # 总空闲内存(UCD-SNMP-MIB)
+    "memShared": "1.3.6.1.4.1.2021.4.13.0",         # 共享内存(UCD-SNMP-MIB)
+    "memBuffer": "1.3.6.1.4.1.2021.4.14.0",         # 缓冲内存(UCD-SNMP-MIB)
+    "memCached": "1.3.6.1.4.1.2021.4.15.0",         # 缓存内存(UCD-SNMP-MIB)
+    
+    # 磁盘
+    "dskTable": "1.3.6.1.4.1.2021.9",               # 磁盘表(UCD-SNMP-MIB)
+    "dskEntry": "1.3.6.1.4.1.2021.9.1",             # 磁盘表条目
+    "dskPath": "1.3.6.1.4.1.2021.9.1.2",            # 磁盘路径
+    "dskTotal": "1.3.6.1.4.1.2021.9.1.6",           # 磁盘总大小
+    "dskAvail": "1.3.6.1.4.1.2021.9.1.7",           # 磁盘可用大小
+    "dskUsed": "1.3.6.1.4.1.2021.9.1.8",            # 磁盘已用大小
+    "dskPercent": "1.3.6.1.4.1.2021.9.1.9",         # 磁盘使用率
+}
 
 class MonitorController:
     """监控控制器"""
@@ -196,6 +248,230 @@ class MonitorController:
             )
     
     @staticmethod
+    async def _get_snmp_value(ip: str, community: str, oid: str, port: int = 161, timeout: int = 1) -> Any:
+        """获取单个SNMP值（模拟实现）"""
+        logger.info(f"模拟SNMP GET: {ip}:{port}, OID: {oid}")
+        
+        # 根据OID类型返回不同的模拟数据
+        if "ifInOctets" in oid:
+            return random.randint(1000000, 100000000)  # 入流量字节数
+        elif "ifOutOctets" in oid:
+            return random.randint(500000, 50000000)  # 出流量字节数
+        elif "hrProcessorLoad" in oid:
+            return random.randint(10, 90)  # CPU负载
+        elif "memTotalReal" in oid:
+            return 8 * 1024 * 1024  # 内存总量 (KB)
+        elif "memAvailReal" in oid:
+            return random.randint(2 * 1024 * 1024, 6 * 1024 * 1024)  # 可用内存 (KB)
+        elif "dskPercent" in oid:
+            return random.randint(20, 80)  # 磁盘使用率
+        elif "sysUpTime" in oid:
+            return "12345678"  # 系统运行时间
+        elif "ifOperStatus" in oid:
+            return 1  # 接口状态 (1=up)
+        else:
+            return None
+
+    @staticmethod
+    async def _get_snmp_walk(ip: str, community: str, oid: str, port: int = 161, timeout: int = 1) -> List[Dict[str, Any]]:
+        """获取SNMP表数据（模拟实现）"""
+        logger.info(f"模拟SNMP WALK: {ip}:{port}, OID: {oid}")
+        
+        result = []
+        
+        # 模拟不同类型的表数据
+        if "ifTable" in oid:
+            # 模拟3个网络接口
+            for i in range(1, 4):
+                result.append({
+                    "oid": f"{SNMP_OIDS['ifIndex']}.{i}",
+                    "index": str(i),
+                    "value": i
+                })
+                result.append({
+                    "oid": f"{SNMP_OIDS['ifDescr']}.{i}",
+                    "index": str(i),
+                    "value": f"eth{i-1}"
+                })
+                result.append({
+                    "oid": f"{SNMP_OIDS['ifType']}.{i}",
+                    "index": str(i),
+                    "value": 6  # ethernet-csmacd
+                })
+                result.append({
+                    "oid": f"{SNMP_OIDS['ifOperStatus']}.{i}",
+                    "index": str(i),
+                    "value": 1  # up
+                })
+        elif "dskTable" in oid:
+            # 模拟2个磁盘
+            for i in range(1, 3):
+                result.append({
+                    "oid": f"{SNMP_OIDS['dskPath']}.{i}",
+                    "index": str(i),
+                    "value": f"/dev/sda{i}"
+                })
+                result.append({
+                    "oid": f"{SNMP_OIDS['dskTotal']}.{i}",
+                    "index": str(i),
+                    "value": 100 * 1024 * 1024  # 100GB
+                })
+                result.append({
+                    "oid": f"{SNMP_OIDS['dskAvail']}.{i}",
+                    "index": str(i),
+                    "value": random.randint(20, 80) * 1024 * 1024  # 可用空间
+                })
+                result.append({
+                    "oid": f"{SNMP_OIDS['dskPercent']}.{i}",
+                    "index": str(i),
+                    "value": random.randint(20, 80)  # 使用率
+                })
+        
+        return result
+
+    @staticmethod
+    async def collect_host_snmp_data(host_id: int) -> Dict[str, Any]:
+        """收集主机SNMP数据（改用模拟实现）"""
+        host = await MonitorHost.get_or_none(id=host_id)
+        if not host:
+            return {"success": False, "message": "主机不存在"}
+        
+        if not host.enable_mrtg:
+            return {"success": False, "message": "该主机未启用MRTG监控"}
+        
+        try:
+            # 使用模拟数据替代真实SNMP数据
+            logger.info(f"使用模拟数据收集主机 {host.host_name} ({host.ip}) 的SNMP数据")
+            
+            # 模拟数据
+            result = {
+                "in_traffic": random.uniform(10, 100),
+                "out_traffic": random.uniform(5, 50),
+                "cpu_usage": random.uniform(10, 90),
+                "memory_usage": random.uniform(20, 80),
+                "disk_usage": random.uniform(30, 70)
+            }
+            
+            # 保存数据到数据库
+            mrtg_data = await MonitorMRTGData.create(
+                host=host,
+                in_traffic=result["in_traffic"],
+                out_traffic=result["out_traffic"],
+                cpu_usage=result["cpu_usage"],
+                memory_usage=result["memory_usage"],
+                disk_usage=result["disk_usage"]
+            )
+            
+            # 更新MRTG状态
+            abnormal_threshold = 80  # 定义异常阈值为80%
+            
+            if (result["cpu_usage"] > abnormal_threshold or 
+                result["memory_usage"] > abnormal_threshold or 
+                result["disk_usage"] > abnormal_threshold):
+                host.mrtg_status = "abnormal"
+                
+                # 创建告警
+                await MonitorAlert.create(
+                    level="warning",
+                    target_type="host",
+                    target_id=host.id,
+                    target_name=host.host_name,
+                    target_ip=host.ip,
+                    alert_type="resource_usage",
+                    content=f"主机 {host.host_name} 资源使用率超过阈值: " + 
+                           (f"CPU {result['cpu_usage']}%, " if result["cpu_usage"] > abnormal_threshold else "") +
+                           (f"内存 {result['memory_usage']}%, " if result["memory_usage"] > abnormal_threshold else "") +
+                           (f"磁盘 {result['disk_usage']}%" if result["disk_usage"] > abnormal_threshold else ""),
+                    details={
+                        "cpu_usage": result["cpu_usage"],
+                        "memory_usage": result["memory_usage"],
+                        "disk_usage": result["disk_usage"],
+                        "threshold": abnormal_threshold
+                    }
+                )
+            else:
+                host.mrtg_status = "normal"
+            
+            await host.save()
+            
+            return {
+                "success": True,
+                "data": result,
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+        except Exception as e:
+            logger.error(f"SNMP数据收集异常: {str(e)}")
+            # 设置状态异常
+            host.mrtg_status = "abnormal"
+            await host.save()
+            return {"success": False, "message": f"SNMP数据收集异常: {str(e)}"}
+
+    @staticmethod
+    async def generate_mock_mrtg_data(host_id: int) -> Dict[str, Any]:
+        """生成模拟的MRTG数据（仅用于演示）"""
+        host = await MonitorHost.get_or_none(id=host_id)
+        if not host or not host.enable_mrtg:
+            return None
+        
+        # 直接使用模拟数据
+        logger.info(f"生成模拟数据，主机ID: {host_id}")
+        
+        # 模拟数据
+        result = {
+            "in_traffic": random.uniform(10, 100),
+            "out_traffic": random.uniform(5, 50),
+            "cpu_usage": random.uniform(10, 90),
+            "memory_usage": random.uniform(20, 80),
+            "disk_usage": random.uniform(30, 70),
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # 创建MRTG数据
+        mrtg_data = await MonitorMRTGData.create(
+            host=host,
+            in_traffic=result["in_traffic"],
+            out_traffic=result["out_traffic"],
+            cpu_usage=result["cpu_usage"],
+            memory_usage=result["memory_usage"],
+            disk_usage=result["disk_usage"]
+        )
+        
+        # 更新MRTG状态
+        abnormal_threshold = 80  # 定义异常阈值为80%
+        
+        if (result["cpu_usage"] > abnormal_threshold or 
+            result["memory_usage"] > abnormal_threshold or 
+            result["disk_usage"] > abnormal_threshold):
+            host.mrtg_status = "abnormal"
+            
+            # 创建告警
+            await MonitorAlert.create(
+                level="warning",
+                target_type="host",
+                target_id=host.id,
+                target_name=host.host_name,
+                target_ip=host.ip,
+                alert_type="resource_usage",
+                content=f"主机 {host.host_name} 资源使用率超过阈值: " + 
+                       (f"CPU {result['cpu_usage']}%, " if result["cpu_usage"] > abnormal_threshold else "") +
+                       (f"内存 {result['memory_usage']}%, " if result["memory_usage"] > abnormal_threshold else "") +
+                       (f"磁盘 {result['disk_usage']}%" if result["disk_usage"] > abnormal_threshold else ""),
+                details={
+                    "cpu_usage": result["cpu_usage"],
+                    "memory_usage": result["memory_usage"],
+                    "disk_usage": result["disk_usage"],
+                    "threshold": abnormal_threshold
+                }
+            )
+        else:
+            host.mrtg_status = "normal"
+        
+        await host.save()
+        
+        return {"success": True, "data": result}
+
+    @staticmethod
     async def get_mrtg_data(host_id: int, days: int = 1) -> List[Dict[str, Any]]:
         """获取MRTG数据"""
         host = await MonitorHost.get_or_none(id=host_id)
@@ -213,55 +489,23 @@ class MonitorController:
             created_at__lte=end_time
         ).order_by("created_at")
         
-        # 转换为字典
-        return [await data.to_dict() for data in mrtg_data]
-    
-    @staticmethod
-    async def generate_mock_mrtg_data(host_id: int) -> Dict[str, Any]:
-        """生成模拟的MRTG数据（仅用于演示）"""
-        host = await MonitorHost.get_or_none(id=host_id)
-        if not host or not host.enable_mrtg:
-            return None
+        # 转换为前端所需格式
+        result = []
+        for data in mrtg_data:
+            # 格式化数据
+            result.append({
+                "id": data.id,
+                "host_id": data.host_id,
+                "timestamp": data.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "inbound_traffic": round(data.in_traffic, 2),
+                "outbound_traffic": round(data.out_traffic, 2),
+                "cpu_usage": round(data.cpu_usage, 2),
+                "memory_usage": round(data.memory_usage, 2),
+                "disk_usage": round(data.disk_usage, 2)
+            })
         
-        # 模拟数据
-        import random
-        
-        # 创建MRTG数据
-        mrtg_data = await MonitorMRTGData.create(
-            host=host,
-            in_traffic=random.uniform(10, 100),
-            out_traffic=random.uniform(5, 50),
-            cpu_usage=random.uniform(10, 90),
-            memory_usage=random.uniform(20, 80),
-            disk_usage=random.uniform(30, 70)
-        )
-        
-        # 更新MRTG状态
-        if mrtg_data.cpu_usage > 80 or mrtg_data.memory_usage > 80 or mrtg_data.disk_usage > 80:
-            host.mrtg_status = "abnormal"
-            
-            # 创建告警
-            await MonitorAlert.create(
-                level="warning",
-                target_type="host",
-                target_id=host.id,
-                target_name=host.host_name,
-                target_ip=host.ip,
-                alert_type="resource_usage",
-                content=f"主机资源使用率过高: CPU {mrtg_data.cpu_usage:.1f}%, 内存 {mrtg_data.memory_usage:.1f}%, 磁盘 {mrtg_data.disk_usage:.1f}%",
-                details={
-                    "cpu_usage": mrtg_data.cpu_usage,
-                    "memory_usage": mrtg_data.memory_usage,
-                    "disk_usage": mrtg_data.disk_usage
-                }
-            )
-        else:
-            host.mrtg_status = "normal"
-        
-        await host.save()
-        
-        return await mrtg_data.to_dict()
-    
+        return result
+
     # 服务监控相关方法
     @staticmethod
     async def get_service_list(
@@ -542,6 +786,7 @@ class MonitorController:
                 }
             )
             
+            logger.error(f"监控服务 {service.service_name} 时发生异常: {str(e)}")
             return ServiceTestResult(
                 success=False,
                 message=f"服务检测失败: {str(e)}",

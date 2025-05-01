@@ -1,4 +1,5 @@
 import { request } from '@/utils'
+import monitor from './monitor'
 
 export default {
   login: (data) => request.post('/base/access_token', data, { noNeedToken: true }),
@@ -89,4 +90,7 @@ export default {
   getAlertList: (params = {}) => request.get('/monitor/alert', { params }),
   getAlertById: (alert_id) => request.get(`/monitor/alert/${alert_id}`),
   updateAlert: (alert_id, data = {}) => request.put(`/monitor/alert/${alert_id}`, data),
+  
+  // 监控模块API
+  ...monitor,
 }

@@ -10,6 +10,7 @@ from app.core.init_app import (
     register_exceptions,
     register_routers,
 )
+from app.core.tasks import start_monitor_tasks
 
 try:
     from app.settings.config import settings
@@ -20,6 +21,7 @@ except ImportError:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_data()
+    await start_monitor_tasks()
     yield
     await Tortoise.close_connections()
 
