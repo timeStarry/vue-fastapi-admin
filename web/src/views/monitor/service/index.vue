@@ -67,6 +67,8 @@
             v-model:value="formModel.check_interval"
             :min="10"
             :max="3600"
+            :step="1"
+            precision="0"
             placeholder="请输入监控间隔"
           />
         </n-form-item>
@@ -75,6 +77,8 @@
             v-model:value="formModel.timeout"
             :min="1"
             :max="60"
+            :step="1"
+            precision="0"
             placeholder="请输入超时时间"
           />
         </n-form-item>
@@ -139,10 +143,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, h, onMounted, nextTick } from 'vue'
+import { ref, reactive, h, onMounted, nextTick, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { NTag, NButton, NSpace } from 'naive-ui'
 import * as echarts from 'echarts'
+import api from '@/api'
 
 const message = useMessage()
 
@@ -165,6 +170,8 @@ const searchParams = reactive({
   service_name: '',
   url: '',
   status: null,
+  service_type: null,
+  host_id: null,
 })
 
 // 状态选项
@@ -193,11 +200,29 @@ const checkMethodOptions = [
 ]
 
 // 主机选项（从主机监控获取）
-const hostOptions = [
-  { label: '主机-1 (192.168.1.1)', value: 1 },
-  { label: '主机-2 (192.168.1.2)', value: 2 },
-  { label: '主机-3 (192.168.1.3)', value: 3 },
-]
+const hostOptions = ref([])
+
+// 加载主机选项数据
+const loadHostOptions = async () => {
+  try {
+    const result = await api.getHostList({ page: 1, page_size: 100 })
+    // 后端返回的数据结构是 {code: 200, data: [...], total: X}
+    const hosts = result.data || []
+    
+    if (hosts && hosts.length > 0) {
+      hostOptions.value = hosts.map(host => ({
+        label: `${host.host_name} (${host.ip})`,
+        value: host.id
+      }))
+    } else {
+      console.warn('未找到可用的主机列表')
+      hostOptions.value = []
+    }
+  } catch (error) {
+    console.error('获取主机列表失败:', error)
+    hostOptions.value = []
+  }
+}
 
 // 状态类型映射
 const getStatusType = (status) => {
@@ -221,11 +246,27 @@ const getStatusText = (status) => {
   return map[status] || '未知'
 }
 
+// 服务类型文本映射
+const getServiceTypeText = (type) => {
+  const option = serviceTypeOptions.find(item => item.value === type)
+  return option ? option.label : type
+}
+
+// 检测方法文本映射
+const getCheckMethodText = (method) => {
+  const option = checkMethodOptions.find(item => item.value === method)
+  return option ? option.label : method
+}
+
 // 表格列定义
 const columns = [
   { title: '服务名称', key: 'service_name' },
   { title: '服务URL', key: 'url', ellipsis: true },
-  { title: '服务类型', key: 'service_type' },
+  { 
+    title: '服务类型', 
+    key: 'service_type',
+    render: (row) => getServiceTypeText(row.service_type)
+  },
   {
     title: '状态',
     key: 'status',
@@ -239,7 +280,7 @@ const columns = [
       )
     },
   },
-  { title: '响应时间', key: 'last_response_time', render: (row) => `${row.last_response_time} ms` },
+  { title: '响应时间', key: 'last_response_time', render: (row) => row.last_response_time ? `${row.last_response_time} ms` : '-' },
   { title: '最后检测', key: 'last_check_time' },
   {
     title: '操作',
@@ -270,6 +311,10 @@ const columns = [
   },
 ]
 
+// 图表实例
+let chart = null
+const chartRef = ref(null)
+
 // 添加服务表单
 const showAddModal = ref(false)
 const formRef = ref(null)
@@ -285,6 +330,35 @@ const formModel = reactive({
   remark: '',
 })
 
+// 监听弹窗显示状态
+watch(showAddModal, (show) => {
+  if (show) {
+    // 弹窗显示时，确保表单初始化正确
+    if (!formModel.id) {
+      // 如果不是编辑模式，重置表单为默认值
+      formModel.service_name = ''
+      formModel.url = ''
+      formModel.service_type = 'web'
+      formModel.check_method = 'http_get'
+      formModel.expected_status = '200'
+      formModel.check_interval = 60
+      formModel.timeout = 5
+      formModel.host_id = null
+      formModel.remark = ''
+    }
+    
+    // 加载主机选项数据（如果还未加载）
+    if (hostOptions.value.length === 0) {
+      loadHostOptions()
+    }
+    
+    // 下一个tick重置表单验证状态
+    nextTick(() => {
+      formRef.value?.restoreValidation()
+    })
+  }
+})
+
 // 表单验证规则
 const rules = {
   service_name: {
@@ -296,13 +370,6 @@ const rules = {
     required: true,
     message: '请输入服务URL',
     trigger: 'blur',
-    validator(rule, value) {
-      const urlPattern = /^(http|https):\/\/.+/
-      if (!urlPattern.test(value) && formModel.check_method.startsWith('http')) {
-        return new Error('HTTP(S)服务URL格式不正确')
-      }
-      return true
-    },
   },
   service_type: {
     required: true,
@@ -318,54 +385,60 @@ const rules = {
     required: true,
     message: '请输入监控间隔',
     trigger: 'change',
+    type: 'number',
+    validator(rule, value) {
+      if (value === null || value === undefined || value === '') {
+        return new Error('请输入监控间隔')
+      }
+      if (typeof value !== 'number') {
+        return new Error('监控间隔必须是数字')
+      }
+      if (value < 10 || value > 3600) {
+        return new Error('监控间隔必须在10-3600秒之间')
+      }
+      return true
+    }
   },
   timeout: {
     required: true,
     message: '请输入超时时间',
     trigger: 'change',
+    type: 'number',
+    validator(rule, value) {
+      if (value === null || value === undefined || value === '') {
+        return new Error('请输入超时时间')
+      }
+      if (typeof value !== 'number') {
+        return new Error('超时时间必须是数字')
+      }
+      if (value < 1 || value > 60) {
+        return new Error('超时时间必须在1-60秒之间')
+      }
+      return true
+    }
   },
 }
 
 // 详情抽屉
 const showDetail = ref(false)
 const currentService = ref({})
-const chartRef = ref(null)
-let chart = null
+const serviceHistory = ref([])
 
 // 加载服务数据
 const loadData = async () => {
   loading.value = true
   try {
-    // 这里应该调用实际的API接口获取数据
-    // const { data } = await fetchServiceList({ 
-    //   ...searchParams,
-    //   page: pagination.page,
-    //   page_size: pagination.pageSize
-    // })
+    const params = {
+      page: pagination.page,
+      page_size: pagination.pageSize,
+      ...searchParams
+    }
     
-    // 模拟数据
-    await new Promise(resolve => setTimeout(resolve, 500))
-    const mockData = Array.from({ length: 10 }).map((_, index) => ({
-      id: index + 1,
-      service_name: `服务-${index + 1}`,
-      url: index % 2 === 0 ? `https://api.example.com/service-${index + 1}` : `http://web.example.com/service-${index + 1}`,
-      service_type: index % 3 === 0 ? 'api' : 'web',
-      status: index % 4 === 0 ? 'error' : (index % 3 === 0 ? 'warning' : 'normal'),
-      check_method: index % 2 === 0 ? 'http_get' : 'http_post',
-      expected_status: '200',
-      last_response_time: Math.floor(Math.random() * 500) + 50,
-      last_check_time: '2023-05-01 10:00:00',
-      check_interval: 60,
-      timeout: 5,
-      host_id: index % 3 + 1,
-      created_at: '2023-01-01 12:00:00',
-      remark: '这是备注信息',
-    }))
-    
-    tableData.value = mockData
-    pagination.itemCount = 100 // 总数应该从API获取
+    const result = await api.getServiceList(params)
+    tableData.value = result.data || []
+    pagination.itemCount = result.total || 0
   } catch (error) {
-    message.error('加载数据失败')
+    message.error('加载数据失败: ' + (error.message || '未知错误'))
     console.error(error)
   } finally {
     loading.value = false
@@ -375,9 +448,8 @@ const loadData = async () => {
 // 重置搜索
 const resetSearch = () => {
   Object.keys(searchParams).forEach(key => {
-    searchParams[key] = ''
+    searchParams[key] = null
   })
-  searchParams.status = null
   loadData()
 }
 
@@ -393,148 +465,234 @@ const handlePageSizeChange = (pageSize) => {
 }
 
 // 详情处理
-const handleDetail = (row) => {
-  currentService.value = row
-  showDetail.value = true
-  
-  // 初始化图表
-  nextTick(() => {
-    initChart()
-  })
+const handleDetail = async (row) => {
+  try {
+    loading.value = true
+    const serviceData = await api.getServiceById({ service_id: row.id })
+    currentService.value = serviceData.data || {}
+    showDetail.value = true
+    
+    // 加载服务响应时间历史数据用于图表展示
+    await loadServiceHistory(row.id)
+  } catch (error) {
+    message.error('获取服务详情失败: ' + (error.message || '未知错误'))
+  } finally {
+    loading.value = false
+  }
 }
 
-// 初始化趋势图表
+// 加载服务响应时间历史数据
+const loadServiceHistory = async (serviceId) => {
+  try {
+    const response = await api.getServiceHistory(serviceId, { days: 7 })
+    const result = response.data || {}
+    serviceHistory.value = result.items || []
+    
+    // 在下一个渲染周期初始化图表
+    nextTick(() => {
+      initChart()
+    })
+  } catch (error) {
+    message.error('获取服务历史数据失败: ' + (error.message || '未知错误'))
+  }
+}
+
+// 初始化图表
 const initChart = () => {
   if (!chartRef.value) return
   
-  // 销毁旧图表
   if (chart) {
     chart.dispose()
   }
   
-  // 创建新图表
   chart = echarts.init(chartRef.value)
   
-  // 生成模拟数据
-  const dates = []
-  const data = []
-  const now = new Date()
+  // 准备图表数据
+  const dateList = serviceHistory.value.map(item => item.created_at)
+  const responseTimeList = serviceHistory.value.map(item => item.response_time)
   
-  for (let i = 0; i < 7; i++) {
-    const date = new Date(now - (6 - i) * 24 * 3600 * 1000)
-    dates.push(`${date.getMonth() + 1}/${date.getDate()}`)
-    
-    // 模拟响应时间数据，正常在200ms左右波动，异常时会有波峰
-    let value = Math.floor(Math.random() * 100) + 150
-    if (i === 3) value = 450 // 模拟出现一次异常波峰
-    data.push(value)
-  }
-  
-  // 设置图表选项
   const option = {
     tooltip: {
       trigger: 'axis',
-      formatter: '{b}<br>{a}: {c} ms',
+      formatter: '{b}<br/>{a}: {c} ms'
     },
     xAxis: {
       type: 'category',
-      data: dates,
+      data: dateList,
+      axisLabel: {
+        rotate: 45
+      }
     },
     yAxis: {
       type: 'value',
-      name: '响应时间(ms)',
+      name: '响应时间(ms)'
     },
     series: [
       {
         name: '响应时间',
         type: 'line',
-        data: data,
+        data: responseTimeList,
         markLine: {
           data: [
             {
-              name: '警告阈值',
-              yAxis: 300,
-              lineStyle: { color: '#f0a020' },
-            },
-            {
-              name: '错误阈值',
-              yAxis: 400,
-              lineStyle: { color: '#d03050' },
-            },
-          ],
-        },
-      },
-    ],
-    color: ['#18a058'],
+              type: 'average',
+              name: '平均值'
+            }
+          ]
+        }
+      }
+    ]
   }
   
   chart.setOption(option)
+  
+  // 窗口大小变化时自动调整图表
+  window.addEventListener('resize', () => {
+    chart && chart.resize()
+  })
 }
 
 // 添加服务
 const handleAddService = () => {
-  formRef.value?.validate(async (errors) => {
-    if (errors) return
+  // 确保表单验证状态是最新的
+  nextTick(() => {
+    formRef.value?.validate(async (errors) => {
+      if (errors) {
+        console.error('表单验证失败:', errors)
+        return
+      }
 
-    try {
-      // 这里应该调用实际的API接口添加服务
-      // await addService(formModel)
-      message.success('添加服务成功')
-      showAddModal.value = false
-      
-      // 重置表单
-      Object.keys(formModel).forEach(key => {
-        if (key === 'service_type') formModel[key] = 'web'
-        else if (key === 'check_method') formModel[key] = 'http_get'
-        else if (key === 'expected_status') formModel[key] = '200'
-        else if (key === 'check_interval') formModel[key] = 60
-        else if (key === 'timeout') formModel[key] = 5
-        else if (key === 'host_id') formModel[key] = null
-        else formModel[key] = ''
-      })
-      
-      // 重新加载数据
-      loadData()
-    } catch (error) {
-      message.error('添加服务失败')
-      console.error(error)
-    }
+      try {
+        loading.value = true
+        
+        let result;
+        const isEdit = !!formModel.id
+        
+        // 确保数值字段是数字类型
+        const submitData = { ...formModel }
+        submitData.check_interval = Number(submitData.check_interval)
+        submitData.timeout = Number(submitData.timeout)
+        
+        if (isEdit) {
+          // 编辑模式
+          result = await api.updateService(submitData.id, submitData)
+          message.success('更新服务成功')
+        } else {
+          // 新增模式
+          result = await api.createService(submitData)
+          message.success('添加服务成功')
+        }
+        
+        showAddModal.value = false
+        
+        // 重置表单
+        delete formModel.id // 删除id字段
+        formModel.service_name = ''
+        formModel.url = ''
+        formModel.service_type = 'web'
+        formModel.check_method = 'http_get'
+        formModel.expected_status = '200'
+        formModel.check_interval = 60
+        formModel.timeout = 5
+        formModel.host_id = null
+        formModel.remark = ''
+        
+        // 确保表单验证状态重置
+        nextTick(() => {
+          formRef.value?.restoreValidation()
+        })
+        
+        // 重新加载数据
+        loadData()
+      } catch (error) {
+        console.error('服务操作失败:', error)
+        message.error(`${formModel.id ? '更新' : '添加'}服务失败: ${error.message || '未知错误'}`)
+      } finally {
+        loading.value = false
+      }
+    })
   })
 }
 
 // 检测服务
-const handleCheckService = (service) => {
-  message.info(`正在检测服务 ${service.service_name}...`)
-  // 这里应该调用实际的API接口进行服务检测
-  setTimeout(() => {
-    message.success(`服务 ${service.service_name} 检测成功，响应时间: 215ms`)
-  }, 1000)
+const handleCheckService = async (service) => {
+  try {
+    message.info(`正在检测服务 ${service.service_name}...`)
+    loading.value = true
+    const response = await api.checkService(service.id)
+    const result = response.data || {}
+    
+    if (result.success) {
+      const data = result.data || {}
+      if (data.status === 'normal') {
+        message.success(`服务 ${service.service_name} 检测成功，响应时间: ${data.response_time}ms`)
+      } else {
+        message.error(`服务 ${service.service_name} 检测失败: ${data.error || '服务异常'}`)
+      }
+    } else {
+      message.error(`服务检测失败: ${result.message}`)
+    }
+    
+    // 重新加载数据以更新状态
+    loadData()
+  } catch (error) {
+    message.error('服务检测失败: ' + (error.message || '未知错误'))
+  } finally {
+    loading.value = false
+  }
 }
 
 // 查看历史记录
-const handleViewHistory = (service) => {
-  message.info(`查看服务 ${service.service_name} 的历史记录`)
-  // 这里应该跳转到历史记录页面或显示历史记录弹窗
+const handleViewHistory = async (service) => {
+  try {
+    message.info(`正在获取服务 ${service.service_name} 的历史记录...`)
+    loading.value = true
+    await loadServiceHistory(service.id)
+    message.success('历史数据加载成功')
+  } catch (error) {
+    message.error('获取历史记录失败: ' + (error.message || '未知错误'))
+  } finally {
+    loading.value = false
+  }
 }
 
 // 编辑服务
 const handleEdit = (service) => {
-  message.info(`编辑服务 ${service.service_name}`)
-  // 这里应该打开编辑弹窗
+  // 填充表单数据
+  formModel.id = service.id
+  formModel.service_name = service.service_name
+  formModel.url = service.url
+  formModel.service_type = service.service_type
+  formModel.check_method = service.check_method
+  formModel.expected_status = service.expected_status
+  formModel.check_interval = service.check_interval
+  formModel.timeout = service.timeout
+  formModel.host_id = service.host_id
+  formModel.remark = service.remark
+  
+  showAddModal.value = true
 }
 
 // 删除服务
-const handleDelete = (service) => {
+const handleDelete = async (service) => {
   if (confirm(`确定要删除服务 ${service.service_name} 吗？`)) {
-    // 这里应该调用实际的API接口删除服务
-    message.success(`已删除服务 ${service.service_name}`)
-    showDetail.value = false
-    loadData()
+    try {
+      loading.value = true
+      await api.deleteService(service.id)
+      message.success(`已删除服务 ${service.service_name}`)
+      showDetail.value = false
+      loadData()
+    } catch (error) {
+      message.error('删除服务失败: ' + (error.message || '未知错误'))
+    } finally {
+      loading.value = false
+    }
   }
 }
 
 onMounted(() => {
   loadData()
+  loadHostOptions()
 })
 </script>
 

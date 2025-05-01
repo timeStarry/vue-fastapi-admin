@@ -131,6 +131,7 @@ import { useMessage } from 'naive-ui'
 import { NTag, NButton, NTooltip } from 'naive-ui'
 import CommonPage from '@/components/page/CommonPage.vue'
 import TheIcon from '@/components/icon/TheIcon.vue'
+import api from '@/api'
 
 defineOptions({ name: '监控面板' })
 
@@ -161,17 +162,17 @@ const charts = ref({})
 
 // 概览数据
 const overviewData = reactive({
-  hostTotal: 36,
-  hostOnlineRate: 94.4,
-  serviceTotal: 48,
-  serviceAvailableRate: 97.9,
+  hostTotal: 0,
+  hostOnlineRate: 0,
+  serviceTotal: 0,
+  serviceAvailableRate: 0,
 })
 
 // 告警数据
 const alertData = reactive({
-  errorCount: 3,
-  warningCount: 8,
-  infoCount: 12,
+  errorCount: 0,
+  warningCount: 0,
+  infoCount: 0,
 })
 
 // 数据概览卡片
@@ -184,7 +185,7 @@ const overviewCards = computed(() => [
   },
   {
     title: '主机在线率',
-    value: `${overviewData.hostOnlineRate}%`,
+    value: `${overviewData.hostOnlineRate.toFixed(1)}%`,
     icon: 'material-symbols:monitor-heart',
     color: '#4caf50',
   },
@@ -196,7 +197,7 @@ const overviewCards = computed(() => [
   },
   {
     title: '服务可用率',
-    value: `${overviewData.serviceAvailableRate}%`,
+    value: `${overviewData.serviceAvailableRate.toFixed(1)}%`,
     icon: 'material-symbols:speed',
     color: '#ff9800',
   },
@@ -244,381 +245,509 @@ const alertColumns = [
       return h(NTag, { type: colorMap[row.level], size: 'small' }, { default: () => textMap[row.level] })
     },
   },
-  { title: '时间', key: 'time', width: 150 },
-  { title: '对象', key: 'target', width: 200 },
+  { title: '时间', key: 'created_at', width: 150 },
+  { 
+    title: '对象', 
+    key: 'target_type', 
+    width: 200,
+    render(row) {
+      return `${row.target_type === 'host' ? '主机' : '服务'}: ${row.target_name}`
+    }
+  },
   { title: '告警内容', key: 'content', ellipsis: true },
   {
-    title: '操作',
-    key: 'actions',
+    title: '状态',
+    key: 'resolved',
     width: 80,
     render(row) {
       return h(
+        NTag,
+        { type: row.resolved ? 'success' : 'warning', size: 'small' },
+        { default: () => (row.resolved ? '已解决' : '未解决') }
+      )
+    },
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    render(row) {
+      if (row.resolved) {
+        return h(
+          NButton,
+          {
+            size: 'small',
+            type: 'info',
+            onClick: () => handleViewAlert(row),
+          },
+          { default: () => '查看' }
+        )
+      }
+      return h(
         NButton,
         {
-          text: true,
-          type: 'primary',
           size: 'small',
-          onClick: () => handleViewAlert(row),
+          type: 'success',
+          onClick: () => handleResolveAlert(row),
         },
-        { default: () => '详情' }
+        { default: () => '标记已解决' }
       )
     },
   },
 ]
 
 // 告警列表数据
-const alertList = ref([
-  {
-    id: 1,
-    level: 'error',
-    time: '2023-05-01 10:15:23',
-    target: '主机-3 (192.168.1.3)',
-    content: '主机无法连接，超时。已尝试5次连接失败。',
-  },
-  {
-    id: 2,
-    level: 'warning',
-    time: '2023-05-01 09:30:05',
-    target: '服务-2 (https://api.example.com/service-2)',
-    content: '服务响应时间超过阈值，当前: 580ms，阈值: 500ms。',
-  },
-  {
-    id: 3,
-    level: 'error',
-    time: '2023-05-01 08:45:12',
-    target: '服务-5 (http://web.example.com/service-5)',
-    content: '服务返回状态码: 500，预期: 200。',
-  },
-  {
-    id: 4,
-    level: 'info',
-    time: '2023-05-01 08:30:45',
-    target: '主机-8 (192.168.1.8)',
-    content: 'MRTG监控数据更新成功。',
-  },
-  {
-    id: 5,
-    level: 'warning',
-    time: '2023-05-01 07:20:18',
-    target: '主机-10 (192.168.1.10)',
-    content: 'CPU使用率超过75%，当前: 82%。',
-  },
-])
+const alertList = ref([])
+
+// 状态分布数据
+const hostStatusDistribution = ref({})
+const serviceStatusDistribution = ref({})
+const alertLevelDistribution = ref({})
+
+// 加载监控面板数据
+const loadData = async () => {
+  loading.value = true
+  try {
+    const response = await api.getDashboardData()
+    const result = response.data || {}
+    
+    // 顶部统计卡片数据
+    overviewData.hostTotal = result.host_count || 0
+    overviewData.serviceTotal = result.service_count || 0
+    
+    // 计算在线率和可用率
+    const onlineHosts = result.online_host_count || 0
+    const normalServices = result.normal_service_count || 0
+    
+    overviewData.hostOnlineRate = overviewData.hostTotal > 0 
+      ? (onlineHosts / overviewData.hostTotal) * 100
+      : 0
+    
+    overviewData.serviceAvailableRate = overviewData.serviceTotal > 0
+      ? (normalServices / overviewData.serviceTotal) * 100
+      : 0
+    
+    // 更新告警数据
+    alertData.errorCount = 0
+    alertData.warningCount = 0
+    alertData.infoCount = 0
+    
+    const alertDistribution = result.alert_level_distribution || {}
+    alertData.errorCount = alertDistribution.error || 0
+    alertData.warningCount = alertDistribution.warning || 0
+    alertData.infoCount = alertDistribution.info || 0
+    
+    // 更新状态分布数据
+    hostStatusDistribution.value = result.host_status_distribution || {}
+    serviceStatusDistribution.value = result.service_status_distribution || {}
+    alertLevelDistribution.value = alertDistribution
+    
+    // 更新告警列表
+    alertList.value = result.recent_alerts || []
+    
+    // 在数据加载完成后再初始化图表
+    nextTick(() => {
+      setTimeout(() => {
+        initCharts() // 使用setTimeout确保DOM完全渲染
+      }, 100)
+    })
+  } catch (error) {
+    message.error('加载监控面板数据失败: ' + (error.message || '未知错误'))
+    console.error(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 处理解决告警
+const handleResolveAlert = async (alert) => {
+  try {
+    loading.value = true
+    await api.updateAlert(alert.id, { resolved: true })
+    message.success('告警已标记为已解决')
+    // 重新加载数据
+    loadData()
+  } catch (error) {
+    message.error('标记告警失败: ' + (error.message || '未知错误'))
+  } finally {
+    loading.value = false
+  }
+}
+
+// 处理查看告警
+const handleViewAlert = (alert) => {
+  message.info(`查看告警: ${alert.content}`)
+  // 这里可以添加查看告警详情的逻辑
+}
 
 // 初始化图表
-function initCharts() {
-  const options = {
-    hostChart: {
+const initCharts = () => {
+  // 清除之前的图表实例
+  Object.values(charts.value).forEach(chart => {
+    chart && chart.dispose()
+  })
+  charts.value = {} // 重置图表实例对象
+  
+  // 延迟一下确保DOM加载完成
+  nextTick(() => {
+    initHostStatusChart()
+    initServiceStatusChart()
+    initAlertTypeChart()
+    initPerformanceChart()
+    initResponseTimeChart()
+  })
+}
+
+// 初始化主机状态分布图表
+const initHostStatusChart = () => {
+  if (!hostChartRef.value) return
+  
+  try {
+    const chart = echarts.init(hostChartRef.value)
+    charts.value.hostChart = chart
+    
+    const data = []
+    const statusLabels = {
+      'online': '在线',
+      'offline': '离线',
+      'unknown': '未知'
+    }
+    
+    // 转换数据为图表所需格式
+    Object.entries(hostStatusDistribution.value).forEach(([status, count]) => {
+      data.push({
+        name: statusLabels[status] || status,
+        value: count
+      })
+    })
+    
+    // 如果没有数据，添加一个空数据以显示图表
+    if (data.length === 0) {
+      data.push({
+        name: '无数据',
+        value: 1
+      })
+    }
+    
+    const option = {
       tooltip: {
         trigger: 'item',
         formatter: '{b}: {c} ({d}%)'
       },
       legend: {
         orient: 'vertical',
-        right: 10,
-        top: 'center',
-        itemWidth: 14,
-        itemHeight: 14,
-        icon: 'circle',
+        left: 'left',
+        data: data.map(item => item.name)
       },
       series: [
         {
+          name: '主机状态',
           type: 'pie',
-          radius: ['40%', '70%'],
-          avoidLabelOverlap: false,
-          itemStyle: {
-            borderRadius: 10,
-            borderColor: '#fff',
-            borderWidth: 2
-          },
-          label: {
-            show: false,
-          },
+          radius: '70%',
+          data: data,
           emphasis: {
-            label: {
-              show: true,
-              fontWeight: 'bold'
+            itemStyle: {
+              shadowBlur: 10,
+              shadowOffsetX: 0,
+              shadowColor: 'rgba(0, 0, 0, 0.5)'
             }
           },
-          labelLine: {
-            show: false
-          },
-          data: [
-            { value: 34, name: '在线', itemStyle: { color: '#18a058' } },
-            { value: 2, name: '离线', itemStyle: { color: '#d03050' } },
-            { value: 0, name: '未知', itemStyle: { color: '#2080f0' } }
-          ]
-        }
-      ]
-    },
-    serviceChart: {
-      tooltip: {
-        trigger: 'item',
-        formatter: '{b}: {c} ({d}%)'
-      },
-      legend: {
-        orient: 'vertical',
-        right: 10,
-        top: 'center',
-        itemWidth: 14,
-        itemHeight: 14,
-        icon: 'circle',
-      },
-      series: [
-        {
-          type: 'pie',
-          radius: ['40%', '70%'],
-          avoidLabelOverlap: false,
-          itemStyle: {
-            borderRadius: 10,
-            borderColor: '#fff',
-            borderWidth: 2
-          },
-          label: {
-            show: false,
-          },
-          emphasis: {
-            label: {
-              show: true,
-              fontWeight: 'bold'
-            }
-          },
-          labelLine: {
-            show: false
-          },
-          data: [
-            { value: 42, name: '正常', itemStyle: { color: '#18a058' } },
-            { value: 3, name: '异常', itemStyle: { color: '#d03050' } },
-            { value: 3, name: '警告', itemStyle: { color: '#f0a020' } },
-            { value: 0, name: '未知', itemStyle: { color: '#2080f0' } }
-          ]
-        }
-      ]
-    },
-    alertTypeChart: {
-      tooltip: {
-        trigger: 'item',
-        formatter: '{b}: {c} ({d}%)'
-      },
-      legend: {
-        orient: 'vertical',
-        right: 10,
-        top: 'center',
-        itemWidth: 14,
-        itemHeight: 14,
-        icon: 'circle',
-      },
-      series: [
-        {
-          type: 'pie',
-          radius: ['40%', '70%'],
-          avoidLabelOverlap: false,
-          itemStyle: {
-            borderRadius: 10,
-            borderColor: '#fff',
-            borderWidth: 2
-          },
-          label: {
-            show: false,
-          },
-          emphasis: {
-            label: {
-              show: true,
-              fontWeight: 'bold'
-            }
-          },
-          labelLine: {
-            show: false
-          },
-          data: [
-            { value: 8, name: '主机离线', itemStyle: { color: '#d03050' } },
-            { value: 6, name: '服务异常', itemStyle: { color: '#f0a020' } },
-            { value: 5, name: '响应超时', itemStyle: { color: '#f0a020' } },
-            { value: 4, name: '资源占用高', itemStyle: { color: '#f0a020' } },
-          ]
-        }
-      ]
-    },
-    performanceChart: {
-      tooltip: {
-        trigger: 'axis',
-      },
-      legend: {
-        data: ['CPU使用率', '内存使用率', '网络流量']
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        boundaryGap: false,
-        data: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00']
-      },
-      yAxis: [
-        {
-          type: 'value',
-          name: '使用率 (%)',
-          min: 0,
-          max: 100,
-          position: 'left'
-        },
-        {
-          type: 'value',
-          name: '流量 (Mbps)',
-          min: 0,
-          max: 100,
-          position: 'right'
-        }
-      ],
-      series: [
-        {
-          name: 'CPU使用率',
-          type: 'line',
-          smooth: true,
-          data: [30, 32, 28, 45, 58, 62, 55, 40],
-          yAxisIndex: 0,
-          itemStyle: { color: '#18a058' }
-        },
-        {
-          name: '内存使用率',
-          type: 'line',
-          smooth: true,
-          data: [50, 51, 52, 55, 60, 65, 60, 58],
-          yAxisIndex: 0,
-          itemStyle: { color: '#2080f0' }
-        },
-        {
-          name: '网络流量',
-          type: 'line',
-          smooth: true,
-          data: [15, 12, 20, 30, 40, 35, 45, 25],
-          yAxisIndex: 1,
-          itemStyle: { color: '#f0a020' }
-        }
-      ]
-    },
-    responseTimeChart: {
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: {
-          type: 'shadow'
-        }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        data: ['API服务', 'Web服务', '数据库', '缓存服务', '认证服务'],
-        axisLabel: {
-          rotate: 45,
-          interval: 0
-        }
-      },
-      yAxis: {
-        type: 'value',
-        name: '毫秒'
-      },
-      series: [
-        {
-          type: 'bar',
-          data: [120, 180, 30, 25, 90],
-          itemStyle: {
-            color: function(params) {
-              // 为不同类型的服务设置不同颜色
-              const colors = ['#1890ff', '#2fc25b', '#facc14', '#223273', '#8543e0'];
-              return colors[params.dataIndex % colors.length];
-            }
-          },
-          label: {
-            show: true,
-            position: 'top',
-            formatter: '{c} ms'
-          }
+          color: ['#4caf50', '#f44336', '#9e9e9e']
         }
       ]
     }
+    
+    chart.setOption(option)
+  } catch (error) {
+    console.error('初始化主机状态图表失败:', error)
   }
+}
 
-  // 初始化各个图表
-  charts.value.hostChart = echarts.init(hostChartRef.value)
-  charts.value.hostChart.setOption(options.hostChart)
+// 初始化服务状态分布图表
+const initServiceStatusChart = () => {
+  if (!serviceChartRef.value) return
+  
+  try {
+    const chart = echarts.init(serviceChartRef.value)
+    charts.value.serviceChart = chart
+    
+    const data = []
+    const statusLabels = {
+      'normal': '正常',
+      'warning': '警告',
+      'error': '异常',
+      'unknown': '未知'
+    }
+    
+    // 转换数据为图表所需格式
+    Object.entries(serviceStatusDistribution.value).forEach(([status, count]) => {
+      data.push({
+        name: statusLabels[status] || status,
+        value: count
+      })
+    })
+    
+    // 如果没有数据，添加一个空数据以显示图表
+    if (data.length === 0) {
+      data.push({
+        name: '无数据',
+        value: 1
+      })
+    }
+    
+    const option = {
+      tooltip: {
+        trigger: 'item',
+        formatter: '{b}: {c} ({d}%)'
+      },
+      legend: {
+        orient: 'vertical',
+        left: 'left',
+        data: data.map(item => item.name)
+      },
+      series: [
+        {
+          name: '服务状态',
+          type: 'pie',
+          radius: '70%',
+          data: data,
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 10,
+              shadowOffsetX: 0,
+              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            }
+          },
+          color: ['#4caf50', '#ff9800', '#f44336', '#9e9e9e']
+        }
+      ]
+    }
+    
+    chart.setOption(option)
+  } catch (error) {
+    console.error('初始化服务状态图表失败:', error)
+  }
+}
 
-  charts.value.serviceChart = echarts.init(serviceChartRef.value)
-  charts.value.serviceChart.setOption(options.serviceChart)
+// 初始化告警类型分布图表
+const initAlertTypeChart = () => {
+  if (!alertTypeChartRef.value) return
+  
+  try {
+    const chart = echarts.init(alertTypeChartRef.value)
+    charts.value.alertTypeChart = chart
+    
+    const data = []
+    const levelLabels = {
+      'error': '严重',
+      'warning': '警告',
+      'info': '信息'
+    }
+    
+    // 转换数据为图表所需格式
+    Object.entries(alertLevelDistribution.value).forEach(([level, count]) => {
+      data.push({
+        name: levelLabels[level] || level,
+        value: count
+      })
+    })
+    
+    // 如果没有数据，添加一个空数据以显示图表
+    if (data.length === 0) {
+      data.push({
+        name: '无数据',
+        value: 1
+      })
+    }
+    
+    const option = {
+      tooltip: {
+        trigger: 'item',
+        formatter: '{b}: {c} ({d}%)'
+      },
+      legend: {
+        orient: 'vertical',
+        left: 'left',
+        data: data.map(item => item.name)
+      },
+      series: [
+        {
+          name: '告警级别',
+          type: 'pie',
+          radius: '70%',
+          data: data,
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 10,
+              shadowOffsetX: 0,
+              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            }
+          },
+          color: ['#f44336', '#ff9800', '#2196f3']
+        }
+      ]
+    }
+    
+    chart.setOption(option)
+  } catch (error) {
+    console.error('初始化告警类型图表失败:', error)
+  }
+}
 
-  charts.value.alertTypeChart = echarts.init(alertTypeChartRef.value)
-  charts.value.alertTypeChart.setOption(options.alertTypeChart)
+// 初始化性能趋势图表 (模拟数据)
+const initPerformanceChart = () => {
+  if (!performanceChartRef.value) return
+  
+  const chart = echarts.init(performanceChartRef.value)
+  charts.value.performanceChart = chart
+  
+  // 模拟24小时性能数据
+  const hours = Array.from({ length: 24 }, (_, i) => `${i}:00`)
+  
+  // 随机生成性能数据
+  const generateRandomData = (baseValue, variance, length) => {
+    return Array.from({ length }, () => Math.floor(baseValue + (Math.random() * variance * 2 - variance)))
+  }
+  
+  const cpuData = generateRandomData(40, 20, 24)
+  const memoryData = generateRandomData(60, 15, 24)
+  const diskData = generateRandomData(50, 10, 24)
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis'
+    },
+    legend: {
+      data: ['CPU使用率', '内存使用率', '磁盘使用率']
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: hours
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: {
+        formatter: '{value}%'
+      },
+      max: 100
+    },
+    series: [
+      {
+        name: 'CPU使用率',
+        type: 'line',
+        data: cpuData,
+        areaStyle: {
+          opacity: 0.2
+        },
+        smooth: true
+      },
+      {
+        name: '内存使用率',
+        type: 'line',
+        data: memoryData,
+        areaStyle: {
+          opacity: 0.2
+        },
+        smooth: true
+      },
+      {
+        name: '磁盘使用率',
+        type: 'line',
+        data: diskData,
+        areaStyle: {
+          opacity: 0.2
+        },
+        smooth: true
+      }
+    ]
+  }
+  
+  chart.setOption(option)
+}
 
-  charts.value.performanceChart = echarts.init(performanceChartRef.value)
-  charts.value.performanceChart.setOption(options.performanceChart)
-
-  charts.value.responseTimeChart = echarts.init(responseTimeChartRef.value)
-  charts.value.responseTimeChart.setOption(options.responseTimeChart)
+// 初始化响应时间图表 (模拟数据)
+const initResponseTimeChart = () => {
+  if (!responseTimeChartRef.value) return
+  
+  const chart = echarts.init(responseTimeChartRef.value)
+  charts.value.responseTimeChart = chart
+  
+  // 模拟7天的数据
+  const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+  
+  // 随机生成响应时间数据
+  const responseTimeData = Array.from({ length: 7 }, () => Math.floor(Math.random() * 200 + 100))
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      formatter: '{b}<br>{a}: {c} ms'
+    },
+    xAxis: {
+      type: 'category',
+      data: days
+    },
+    yAxis: {
+      type: 'value',
+      name: '响应时间(ms)'
+    },
+    series: [
+      {
+        name: '平均响应时间',
+        type: 'bar',
+        data: responseTimeData,
+        itemStyle: {
+          color: '#1890ff'
+        }
+      }
+    ]
+  }
+  
+  chart.setOption(option)
 }
 
 // 刷新数据
-function refreshData() {
-  loading.value = true
-  message.info('正在刷新数据...')
-  
-  // 这里应该调用实际的API接口获取数据
-  setTimeout(() => {
-    loading.value = false
-    message.success('数据已刷新')
-  }, 1000)
+const refreshData = () => {
+  loadData()
+  message.success('数据已刷新')
 }
 
-// 查看告警详情
-function handleViewAlert(alert) {
-  message.info(`查看告警详情：${alert.content}`)
-  // 这里应该显示告警详情弹窗或跳转到告警详情页面
-}
-
-// 根据窗口大小调整图表
-function resizeCharts() {
-  Object.values(charts.value).forEach(chart => {
-    chart?.resize()
+// 窗口大小变化时调整图表大小
+const handleResize = () => {
+  nextTick(() => {
+    Object.values(charts.value).forEach(chart => {
+      chart && chart.resize()
+    })
   })
 }
 
-// 销毁图表实例
-function disposeCharts() {
+// 页面挂载
+onMounted(() => {
+  loadData()
+  window.addEventListener('resize', handleResize)
+})
+
+// 页面销毁前
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  // 销毁图表实例
   Object.values(charts.value).forEach(chart => {
-    chart?.dispose()
+    chart && chart.dispose()
   })
   charts.value = {}
-}
-
-// 监听窗口大小变化
-window.addEventListener('resize', resizeCharts)
-
-onMounted(() => {
-  loading.value = true
-  // 加载数据
-  setTimeout(() => {
-    loading.value = false
-    nextTick(() => {
-      initCharts()
-    })
-  }, 500)
 })
 
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', resizeCharts)
-  disposeCharts()
-})
-
-// 解决缓存组件激活时图表不显示的问题
+// 页面激活时（缓存模式）
 onActivated(() => {
   nextTick(() => {
-    resizeCharts()
+    loadData() // 确保在DOM更新后加载数据
   })
 })
 </script>

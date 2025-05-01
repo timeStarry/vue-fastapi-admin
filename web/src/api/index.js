@@ -62,7 +62,31 @@ export default {
   // 工单统计数据
   getTicketStatistics: (params = {}) => request.get('/ticket/statistics', { params }),
   
-  // 网络设备相关API (假设将来会实现)
-  getDeviceList: (params = {}) => request.get('/device/list', { params }),
-  getDeviceById: (params = {}) => request.get('/device/get', { params }),
+  // 监控模块API
+  // 主机监控相关
+  getHostList: (params = {}) => request.get('/monitor/host', { params }),
+  getHostById: (params = {}) => request.get(`/monitor/host/${params.host_id}`),
+  createHost: (data = {}) => request.post('/monitor/host', data),
+  updateHost: (host_id, data = {}) => request.put(`/monitor/host/${host_id}`, data),
+  deleteHost: (host_id) => request.delete(`/monitor/host/${host_id}`),
+  pingHost: (host_id) => request.post(`/monitor/host/${host_id}/ping`),
+  getMRTGData: (host_id, params = {}) => request.get(`/monitor/host/${host_id}/mrtg`, { params }),
+  generateMockMRTGData: (host_id) => request.post(`/monitor/host/${host_id}/mrtg/mock`),
+  
+  // 服务监控相关
+  getServiceList: (params = {}) => request.get('/monitor/service', { params }),
+  getServiceById: (params = {}) => request.get(`/monitor/service/${params.service_id}`),
+  createService: (data = {}) => request.post('/monitor/service', data),
+  updateService: (service_id, data = {}) => request.put(`/monitor/service/${service_id}`, data),
+  deleteService: (service_id) => request.delete(`/monitor/service/${service_id}`),
+  checkService: (service_id) => request.post(`/monitor/service/${service_id}/check`),
+  getServiceHistory: (service_id, params = {}) => request.get(`/monitor/service/${service_id}/history`, { params }),
+  
+  // 监控面板相关
+  getDashboardData: () => request.get('/monitor/dashboard'),
+  
+  // 告警相关
+  getAlertList: (params = {}) => request.get('/monitor/alert', { params }),
+  getAlertById: (alert_id) => request.get(`/monitor/alert/${alert_id}`),
+  updateAlert: (alert_id, data = {}) => request.put(`/monitor/alert/${alert_id}`, data),
 }
