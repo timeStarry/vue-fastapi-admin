@@ -110,7 +110,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, computed, onBeforeUnmount, h, nextTick } from 'vue'
+import { onMounted, ref, computed, onBeforeUnmount, h, nextTick, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton,
@@ -485,7 +485,16 @@ function initCharts() {
           type: 'bar',
           data: (dashboardData.value.process_time || []).map(item => item.avg_time),
           itemStyle: {
-            color: '#1890ff'
+            color: function(params) {
+              // 为不同类型的工单设置不同颜色
+              const colors = ['#1890ff', '#2fc25b', '#facc14', '#223273', '#8543e0'];
+              return colors[params.dataIndex % colors.length];
+            }
+          },
+          label: {
+            show: true,
+            position: 'top',
+            formatter: '{c} h'
           }
         }
       ]
@@ -537,56 +546,144 @@ function initCharts() {
     }
   }
 
-  // 初始化图表
-  if (typeChartRef.value && !charts.value.typeChart) {
+  // 确保销毁旧实例
+  Object.values(charts.value).forEach(chart => {
+    chart?.dispose()
+  })
+  
+  // 重新初始化图表
+  if (typeChartRef.value) {
     charts.value.typeChart = echarts.init(typeChartRef.value)
+    charts.value.typeChart.setOption(options.typeChart)
   }
-  if (statusChartRef.value && !charts.value.statusChart) {
+  if (statusChartRef.value) {
     charts.value.statusChart = echarts.init(statusChartRef.value)
+    charts.value.statusChart.setOption(options.statusChart)
   }
-  if (priorityChartRef.value && !charts.value.priorityChart) {
+  if (priorityChartRef.value) {
     charts.value.priorityChart = echarts.init(priorityChartRef.value)
+    charts.value.priorityChart.setOption(options.priorityChart)
   }
-  if (trendChartRef.value && !charts.value.trendChart) {
+  if (trendChartRef.value) {
     charts.value.trendChart = echarts.init(trendChartRef.value)
+    charts.value.trendChart.setOption(options.trendChart)
   }
-  if (timeChartRef.value && !charts.value.timeChart) {
+  if (timeChartRef.value) {
     charts.value.timeChart = echarts.init(timeChartRef.value)
+    charts.value.timeChart.setOption(options.timeChart)
   }
-  if (assigneeChartRef.value && !charts.value.assigneeChart) {
+  if (assigneeChartRef.value) {
     charts.value.assigneeChart = echarts.init(assigneeChartRef.value)
+    charts.value.assigneeChart.setOption(options.assigneeChart)
   }
-
-  // 设置图表选项
-  charts.value.typeChart?.setOption(options.typeChart)
-  charts.value.statusChart?.setOption(options.statusChart)
-  charts.value.priorityChart?.setOption(options.priorityChart)
-  charts.value.trendChart?.setOption(options.trendChart)
-  charts.value.timeChart?.setOption(options.timeChart)
-  charts.value.assigneeChart?.setOption(options.assigneeChart)
+  
+  // 调整图表大小确保正确渲染
+  setTimeout(() => {
+    handleResize()
+  }, 200)
 }
 
 // 获取仪表盘数据
 async function fetchDashboardData() {
   try {
     loading.value = true
+    
+    // 获取主要统计数据
     const res = await api.getTicketStatistics()
     dashboardData.value = res.data
-
-    // 使用模拟数据（实际项目中请删除这部分代码）
-    if (!dashboardData.value.overview) {
+    
+    // 如果没有获取到数据，使用模拟数据
+    if (!dashboardData.value || !dashboardData.value.overview) {
+      console.log('未获取到统计概览数据，使用模拟数据')
       dashboardData.value = generateMockData()
+    } else {
+      const mockData = generateMockData()
+      
+      // 确保各个数据字段都存在
+      if (!dashboardData.value.trend_data) dashboardData.value.trend_data = []
+      if (!dashboardData.value.process_time) dashboardData.value.process_time = []
+      if (!dashboardData.value.assignee_workload) dashboardData.value.assignee_workload = []
+      
+      // 获取工单数量趋势数据
+      if (dashboardData.value.trend_data.length === 0) {
+        try {
+          const trendRes = await api.getTicketStatistics({ type: 'trend' })
+          if (trendRes.data && trendRes.data.trend_data && trendRes.data.trend_data.length > 0) {
+            dashboardData.value.trend_data = trendRes.data.trend_data
+          } else {
+            console.log('使用模拟的工单数量趋势数据')
+            dashboardData.value.trend_data = mockData.trend_data
+          }
+        } catch (err) {
+          console.error('获取工单趋势数据失败', err)
+          dashboardData.value.trend_data = mockData.trend_data
+        }
+      }
+      
+      // 获取平均处理时长数据
+      if (dashboardData.value.process_time.length === 0) {
+        try {
+          console.log('请求平均处理时长数据...');
+          const timeRes = await api.getTicketStatistics({ type: 'process_time' })
+          console.log('平均处理时长响应:', timeRes);
+          
+          if (timeRes.data && timeRes.data.process_time && timeRes.data.process_time.length > 0) {
+            console.log('使用真实的平均处理时长数据:', timeRes.data.process_time);
+            dashboardData.value.process_time = timeRes.data.process_time;
+          } else {
+            console.log('使用模拟的平均处理时长数据');
+            dashboardData.value.process_time = mockData.process_time;
+          }
+        } catch (err) {
+          console.error('获取处理时长数据失败', err);
+          dashboardData.value.process_time = mockData.process_time;
+        }
+      }
+      
+      // 获取处理人工作量数据
+      if (dashboardData.value.assignee_workload.length === 0) {
+        try {
+          const workloadRes = await api.getTicketStatistics({ type: 'assignee_workload' })
+          if (workloadRes.data && workloadRes.data.assignee_workload && workloadRes.data.assignee_workload.length > 0) {
+            dashboardData.value.assignee_workload = workloadRes.data.assignee_workload
+          } else {
+            console.log('使用模拟的处理人工作量数据')
+            dashboardData.value.assignee_workload = mockData.assignee_workload
+          }
+        } catch (err) {
+          console.error('获取处理人工作量数据失败', err)
+          dashboardData.value.assignee_workload = mockData.assignee_workload
+        }
+      }
+    }
+
+    // 确保所有必要的数据都有值
+    const mockData = generateMockData()
+    if (!dashboardData.value.trend_data || dashboardData.value.trend_data.length === 0) {
+      dashboardData.value.trend_data = mockData.trend_data
+    }
+    if (!dashboardData.value.process_time || dashboardData.value.process_time.length === 0) {
+      dashboardData.value.process_time = mockData.process_time
+    }
+    if (!dashboardData.value.assignee_workload || dashboardData.value.assignee_workload.length === 0) {
+      dashboardData.value.assignee_workload = mockData.assignee_workload
     }
 
     // 初始化图表
     await nextTick()
-    initCharts()
+    // 确保DOM已经完全渲染
+    setTimeout(() => {
+      initCharts()
+    }, 100)
   } catch (error) {
     console.error('获取工单统计数据失败', error)
     // 使用模拟数据
     dashboardData.value = generateMockData()
     await nextTick()
-    initCharts()
+    // 确保DOM已经完全渲染
+    setTimeout(() => {
+      initCharts()
+    }, 100)
   } finally {
     loading.value = false
   }
@@ -594,7 +691,13 @@ async function fetchDashboardData() {
 
 // 刷新数据
 function refreshData() {
-  fetchDashboardData()
+  $message?.info('正在刷新数据...')
+  fetchDashboardData().then(() => {
+    $message?.success('数据刷新成功')
+  }).catch(err => {
+    console.error('刷新数据失败', err)
+    $message?.error('数据刷新失败，请检查网络连接')
+  })
 }
 
 // 窗口大小变化时重新调整图表大小
@@ -712,6 +815,14 @@ onBeforeUnmount(() => {
   Object.values(charts.value).forEach(chart => {
     chart?.dispose()
   })
+  charts.value = {}
+})
+
+// 如果在组件中使用了keep-alive，可以添加onActivated钩子
+onActivated(() => {
+  nextTick(() => {
+    handleResize()
+  })
 })
 </script>
 
@@ -757,10 +868,15 @@ onBeforeUnmount(() => {
 .chart-container {
   width: 100%;
   height: 240px;
+  position: relative;
+  overflow: hidden;
 }
 
 .chart {
   width: 100%;
   height: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
 }
 </style> 

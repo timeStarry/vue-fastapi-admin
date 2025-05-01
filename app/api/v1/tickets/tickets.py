@@ -205,8 +205,37 @@ async def get_file(filename: str):
 
 
 @router.get("/statistics", summary="获取工单统计数据")
-async def get_ticket_statistics(current_user = Depends(AuthControl.is_authed)):
-    """获取工单统计数据"""
+async def get_ticket_statistics(
+    type: str = Query(None, description="数据类型，支持trend/process_time/assignee_workload"),
+    current_user = Depends(AuthControl.is_authed),
+):
+    """获取工单统计数据
+    
+    参数:
+    - type: 可选，数据类型，支持trend/process_time/assignee_workload
+    
+    返回:
+    - type为trend时返回工单数量趋势数据
+    - type为process_time时返回平均处理时长数据
+    - type为assignee_workload时返回处理人工作量数据
+    - 不提供type时返回所有统计数据
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(f"获取工单统计数据，类型: {type}")
+    
     data = await ticket_controller.get_statistics()
     
+    # 根据type参数返回不同的数据
+    if type == "trend":
+        logger.debug(f"返回趋势数据: {data.get('trend_data')}")
+        return Success(data={"trend_data": data.get("trend_data", [])})
+    elif type == "process_time":
+        logger.debug(f"返回处理时长数据: {data.get('process_time')}")
+        return Success(data={"process_time": data.get("process_time", [])})
+    elif type == "assignee_workload":
+        logger.debug(f"返回处理人工作量数据: {data.get('assignee_workload')}")
+        return Success(data={"assignee_workload": data.get("assignee_workload", [])})
+    
+    logger.debug("返回全部统计数据")
     return Success(data=data) 

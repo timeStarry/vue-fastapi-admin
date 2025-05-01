@@ -355,8 +355,12 @@ class TicketController:
     
     async def get_statistics(self) -> Dict[str, Any]:
         """获取工单统计数据"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # 工单总数
         total_count = await Ticket.all().count()
+        logger.debug(f"总工单数: {total_count}")
         
         # 待处理工单数量
         pending_count = await Ticket.filter(status__in=["pending", "processing"]).count()
@@ -365,8 +369,20 @@ class TicketController:
         completed_count = await Ticket.filter(status="completed").count()
         
         # 平均处理时间(小时)
-        # 这里需要实际数据，临时用固定值代替
-        avg_process_time = 8.5
+        completed_tickets = await Ticket.filter(status="completed").all()
+        if completed_tickets:
+            total_hours = 0
+            count = 0
+            for ticket in completed_tickets:
+                if ticket.finished_time and ticket.created_at:
+                    # 计算工单完成时间与创建时间的差值（小时）
+                    delta = ticket.finished_time - ticket.created_at
+                    hours = delta.total_seconds() / 3600
+                    total_hours += hours
+                    count += 1
+            avg_process_time = round(total_hours / count, 1) if count > 0 else 0
+        else:
+            avg_process_time = 0
         
         # 工单类型分布
         type_distribution = []
@@ -390,36 +406,122 @@ class TicketController:
                 priority_distribution.append({"priority": priority_value, "count": count})
         
         # 工单数量趋势(最近7天)
-        # 这里应该用真实数据，临时用假数据代替
-        trend_data = [
-            {"date": "5-1", "created": 10, "completed": 8},
-            {"date": "5-2", "created": 12, "completed": 10},
-            {"date": "5-3", "created": 15, "completed": 11},
-            {"date": "5-4", "created": 8, "completed": 9},
-            {"date": "5-5", "created": 9, "completed": 12},
-            {"date": "5-6", "created": 13, "completed": 8},
-            {"date": "5-7", "created": 7, "completed": 10},
-        ]
+        import datetime
+        
+        trend_data = []
+        today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        for i in range(6, -1, -1):
+            date = today - datetime.timedelta(days=i)
+            next_date = date + datetime.timedelta(days=1)
+            
+            # 获取当天创建的工单数量
+            created_count = await Ticket.filter(
+                created_at__gte=date,
+                created_at__lt=next_date
+            ).count()
+            
+            # 获取当天完成的工单数量
+            completed_count = await Ticket.filter(
+                finished_time__gte=date,
+                finished_time__lt=next_date
+            ).count()
+            
+            trend_data.append({
+                "date": date.strftime("%m-%d"),  # 修改为更兼容的格式
+                "created": created_count,
+                "completed": completed_count
+            })
         
         # 平均处理时间(按工单类型)
-        # 这里应该用真实数据，临时用假数据代替
-        process_time = [
-            {"type": "fault", "type_name": "故障报修", "avg_time": 5.8},
-            {"type": "resource", "type_name": "资源申请", "avg_time": 12.3},
-            {"type": "config", "type_name": "配置变更", "avg_time": 8.4},
-            {"type": "maintenance", "type_name": "日常维护", "avg_time": 3.6},
-            {"type": "emergency", "type_name": "紧急处理", "avg_time": 2.1},
-        ]
+        process_time = []
+        
+        for type_value, type_name in [
+            ("fault", "故障报修"), 
+            ("resource", "资源申请"), 
+            ("config", "配置变更"), 
+            ("maintenance", "日常维护"), 
+            ("emergency", "紧急处理")
+        ]:
+            # 获取已完成的该类型工单
+            type_tickets = await Ticket.filter(
+                type=type_value, 
+                status="completed"
+            ).all()
+            
+            if type_tickets:
+                total_hours = 0
+                count = 0
+                for ticket in type_tickets:
+                    if ticket.finished_time and ticket.created_at:
+                        delta = ticket.finished_time - ticket.created_at
+                        hours = delta.total_seconds() / 3600
+                        total_hours += hours
+                        count += 1
+                
+                if count > 0:
+                    avg_time = round(total_hours / count, 1)
+                    process_time.append({
+                        "type": type_value,
+                        "type_name": type_name,
+                        "avg_time": avg_time
+                    })
+                    logger.debug(f"工单类型 {type_name} 的平均处理时间: {avg_time}小时 (基于{count}条记录)")
+                else:
+                    # 即使没有数据也添加0值记录，确保图表显示
+                    process_time.append({
+                        "type": type_value,
+                        "type_name": type_name,
+                        "avg_time": 0
+                    })
+                    logger.debug(f"工单类型 {type_name} 无有效处理时间记录")
+            else:
+                # 即使没有数据也添加0值记录，确保图表显示
+                process_time.append({
+                    "type": type_value,
+                    "type_name": type_name,
+                    "avg_time": 0
+                })
+                logger.debug(f"工单类型 {type_name} 无已完成工单")
+        
+        logger.debug(f"处理时间数据: {process_time}")
         
         # 处理人工作量
-        # 这里应该用真实数据，临时用假数据代替
-        assignee_workload = [
-            {"assignee_name": "张三", "completed": 28, "processing": 5},
-            {"assignee_name": "李四", "completed": 32, "processing": 3},
-            {"assignee_name": "王五", "completed": 24, "processing": 8},
-            {"assignee_name": "赵六", "completed": 18, "processing": 4},
-            {"assignee_name": "钱七", "completed": 12, "processing": 2},
-        ]
+        assignee_workload = []
+        
+        # 获取所有处理过工单的用户
+        assignees = await User.filter(
+            id__in=await Ticket.all().distinct().values_list("assignee_id", flat=True)
+        ).all()
+        
+        for assignee in assignees:
+            if not assignee:
+                continue
+                
+            # 已完成的工单数量
+            completed = await Ticket.filter(
+                assignee_id=assignee.id,
+                status="completed"
+            ).count()
+            
+            # 处理中的工单数量
+            processing = await Ticket.filter(
+                assignee_id=assignee.id,
+                status__in=["pending", "processing", "confirming"]
+            ).count()
+            
+            if completed > 0 or processing > 0:
+                assignee_workload.append({
+                    "assignee_name": assignee.alias or assignee.username,
+                    "completed": completed,
+                    "processing": processing
+                })
+        
+        # 按总工单数排序
+        assignee_workload.sort(key=lambda x: x["completed"] + x["processing"], reverse=True)
+        
+        # 最多显示前5个
+        assignee_workload = assignee_workload[:5]
         
         # 获取待处理的工单(按优先级排序)
         pending_tickets_query = await Ticket.filter(
