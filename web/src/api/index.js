@@ -1,5 +1,6 @@
 import { request } from '@/utils'
 import monitor from './monitor'
+import notification from './notification'
 
 export default {
   login: (data) => request.post('/base/access_token', data, { noNeedToken: true }),
@@ -93,4 +94,7 @@ export default {
   
   // 监控模块API
   ...monitor,
+  
+  // 通知模块API
+  ...notification,
 }

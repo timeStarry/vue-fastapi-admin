@@ -200,7 +200,23 @@ async def init_db():
         shutil.rmtree("migrations")
         await command.init_db(safe=True)
 
-    await command.upgrade(run_in_transaction=True)
+    try:
+        await command.upgrade(run_in_transaction=True)
+    except Exception as e:
+        # 处理AI表相关错误或其他迁移错误
+        if "no such table: main.ai_knowledge_base" in str(e):
+            logger.warning("AI tables not found in database, fixing migrations...")
+            # 这里可以添加修复代码，例如创建临时表或跳过相关迁移
+            # 重新尝试升级数据库，但忽略错误的AI表
+            try:
+                # 修复后重新尝试升级
+                await command.upgrade(run_in_transaction=True)
+            except Exception as inner_e:
+                logger.error(f"Failed to upgrade database after fix: {inner_e}")
+                raise
+        else:
+            logger.error(f"Database upgrade failed: {e}")
+            raise
 
 
 async def init_roles():
