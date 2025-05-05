@@ -4,12 +4,14 @@ from typing import Dict, List, Any
 
 from app.models.monitor import MonitorHost, MonitorService
 from app.controllers.monitor import MonitorController
+from app.controllers.notification import NotificationController
 from app.log import logger
 
 # 计划任务运行标记
 tasks_running = {
     "monitor_hosts": False,
-    "monitor_services": False
+    "monitor_services": False,
+    "notification_processor": False
 }
 
 async def start_monitor_tasks():
@@ -21,6 +23,9 @@ async def start_monitor_tasks():
     
     # 启动服务监控任务
     asyncio.create_task(schedule_service_monitor())
+    
+    # 启动通知处理任务
+    asyncio.create_task(schedule_notification_processor())
     
     logger.info("监控任务调度器已启动")
 
@@ -129,6 +134,35 @@ async def schedule_service_monitor():
     finally:
         tasks_running["monitor_services"] = False
 
+async def schedule_notification_processor():
+    """调度通知处理任务"""
+    global tasks_running
+    
+    if tasks_running["notification_processor"]:
+        logger.warning("通知处理任务已在运行中")
+        return
+    
+    tasks_running["notification_processor"] = True
+    
+    try:
+        while True:
+            try:
+                # 处理通知队列
+                logger.info("开始处理通知队列")
+                await NotificationController.process_notification_queue()
+            except Exception as e:
+                logger.error(f"处理通知队列时发生异常: {str(e)}")
+            
+            # 等待30秒
+            await asyncio.sleep(30)
+    
+    except asyncio.CancelledError:
+        logger.info("通知处理任务被取消")
+    except Exception as e:
+        logger.error(f"通知处理任务异常: {str(e)}")
+    finally:
+        tasks_running["notification_processor"] = False
+
 # 停止所有任务
 async def stop_monitor_tasks():
     """停止所有监控任务"""
@@ -138,6 +172,7 @@ async def stop_monitor_tasks():
     
     tasks_running["monitor_hosts"] = False
     tasks_running["monitor_services"] = False
+    tasks_running["notification_processor"] = False
     
     # 等待任务结束
     await asyncio.sleep(1)

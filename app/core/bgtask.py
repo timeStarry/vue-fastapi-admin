@@ -21,11 +21,15 @@ class BgTasks:
     async def add_task(cls, func, *args, **kwargs):
         """添加后台任务"""
         bg_tasks = await cls.get_bg_tasks_obj()
+        if bg_tasks is None:
+            # 如果上下文中没有背景任务对象，创建一个新的
+            bg_tasks = BackgroundTasks()
+            CTX_BG_TASKS.set(bg_tasks)
         bg_tasks.add_task(func, *args, **kwargs)
 
     @classmethod
     async def execute_tasks(cls):
         """执行后台任务，一般是请求结果返回之后执行"""
         bg_tasks = await cls.get_bg_tasks_obj()
-        if bg_tasks.tasks:
+        if bg_tasks and bg_tasks.tasks:
             await bg_tasks()

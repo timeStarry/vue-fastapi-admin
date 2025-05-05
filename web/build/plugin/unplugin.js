@@ -2,6 +2,7 @@ import { resolve } from 'path'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
+import { AntDesignVueResolver } from 'unplugin-vue-components/resolvers'
 import { FileSystemIconLoader } from 'unplugin-icons/loaders'
 import IconsResolver from 'unplugin-icons/resolver'
 
@@ -33,6 +34,7 @@ export default [
   Components({
     resolvers: [
       NaiveUiResolver(),
+      AntDesignVueResolver(),
       IconsResolver({ customCollections: ['custom'], componentPrefix: 'icon' }),
     ],
     dts: false,

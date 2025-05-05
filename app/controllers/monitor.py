@@ -20,6 +20,14 @@ from app.schemas.monitor import (
     DashboardData, AlertUpdate
 )
 
+# 添加通知相关导入
+try:
+    from app.controllers.notification import NotificationController
+    from app.schemas.notification import NotificationCreate, NotificationPriority
+    HAS_NOTIFICATION = True
+except ImportError:
+    HAS_NOTIFICATION = False
+
 # 替换为系统日志
 from app.log import logger
 
@@ -371,7 +379,7 @@ class MonitorController:
                 host.mrtg_status = "abnormal"
                 
                 # 创建告警
-                await MonitorAlert.create(
+                alert = await MonitorAlert.create(
                     level="warning",
                     target_type="host",
                     target_id=host.id,
@@ -389,6 +397,34 @@ class MonitorController:
                         "threshold": abnormal_threshold
                     }
                 )
+                
+                # 将告警添加到通知队列
+                if HAS_NOTIFICATION:
+                    try:
+                        # 创建通知
+                        await NotificationController.create_notification(
+                            NotificationCreate(
+                                source="monitor",
+                                source_id=host.id,
+                                title=f"主机资源告警: {host.host_name}",
+                                content=f"主机 {host.host_name} ({host.ip}) 资源使用率超过阈值: " + 
+                                       (f"CPU {result['cpu_usage']}%, " if result["cpu_usage"] > abnormal_threshold else "") +
+                                       (f"内存 {result['memory_usage']}%, " if result["memory_usage"] > abnormal_threshold else "") +
+                                       (f"磁盘 {result['disk_usage']}%" if result["disk_usage"] > abnormal_threshold else ""),
+                                priority=NotificationPriority.HIGH,
+                                data={
+                                    "host_id": host.id,
+                                    "host_name": host.host_name,
+                                    "host_ip": host.ip,
+                                    "cpu_usage": result["cpu_usage"],
+                                    "memory_usage": result["memory_usage"],
+                                    "disk_usage": result["disk_usage"],
+                                    "threshold": abnormal_threshold
+                                }
+                            )
+                        )
+                    except Exception as e:
+                        logger.error(f"添加告警到通知队列失败: {str(e)}")
             else:
                 host.mrtg_status = "normal"
             
@@ -446,7 +482,7 @@ class MonitorController:
             host.mrtg_status = "abnormal"
             
             # 创建告警
-            await MonitorAlert.create(
+            alert = await MonitorAlert.create(
                 level="warning",
                 target_type="host",
                 target_id=host.id,
@@ -464,6 +500,34 @@ class MonitorController:
                     "threshold": abnormal_threshold
                 }
             )
+            
+            # 将告警添加到通知队列
+            if HAS_NOTIFICATION:
+                try:
+                    # 创建通知
+                    await NotificationController.create_notification(
+                        NotificationCreate(
+                            source="monitor",
+                            source_id=host.id,
+                            title=f"主机资源告警: {host.host_name}",
+                            content=f"主机 {host.host_name} ({host.ip}) 资源使用率超过阈值: " + 
+                                   (f"CPU {result['cpu_usage']}%, " if result["cpu_usage"] > abnormal_threshold else "") +
+                                   (f"内存 {result['memory_usage']}%, " if result["memory_usage"] > abnormal_threshold else "") +
+                                   (f"磁盘 {result['disk_usage']}%" if result["disk_usage"] > abnormal_threshold else ""),
+                            priority=NotificationPriority.HIGH,
+                            data={
+                                "host_id": host.id,
+                                "host_name": host.host_name,
+                                "host_ip": host.ip,
+                                "cpu_usage": result["cpu_usage"],
+                                "memory_usage": result["memory_usage"],
+                                "disk_usage": result["disk_usage"],
+                                "threshold": abnormal_threshold
+                            }
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f"添加告警到通知队列失败: {str(e)}")
         else:
             host.mrtg_status = "normal"
         
@@ -727,7 +791,7 @@ class MonitorController:
             
             # 如果状态是error，创建告警
             if status == "error" and not content:
-                await MonitorAlert.create(
+                alert = await MonitorAlert.create(
                     level="error",
                     target_type="service",
                     target_id=service.id,
@@ -742,6 +806,30 @@ class MonitorController:
                         "status_code": status_code
                     }
                 )
+                
+                # 将服务告警添加到通知队列
+                if HAS_NOTIFICATION:
+                    try:
+                        # 创建通知
+                        await NotificationController.create_notification(
+                            NotificationCreate(
+                                source="monitor",
+                                source_id=service.id,
+                                title=f"服务告警: {service.service_name}",
+                                content=f"服务不可用: {service.service_name} ({service.url})",
+                                priority=NotificationPriority.HIGH,
+                                data={
+                                    "service_id": service.id,
+                                    "service_name": service.service_name,
+                                    "url": service.url,
+                                    "check_method": service.check_method,
+                                    "response_time": response_time,
+                                    "status_code": status_code
+                                }
+                            )
+                        )
+                    except Exception as e:
+                        logger.error(f"添加服务告警到通知队列失败: {str(e)}")
             
             # 返回结果
             return ServiceTestResult(
@@ -771,7 +859,7 @@ class MonitorController:
             )
             
             # 创建告警
-            await MonitorAlert.create(
+            alert = await MonitorAlert.create(
                 level="error",
                 target_type="service",
                 target_id=service.id,
@@ -785,6 +873,29 @@ class MonitorController:
                     "error": str(e)
                 }
             )
+            
+            # 将服务异常告警添加到通知队列
+            if HAS_NOTIFICATION:
+                try:
+                    # 创建通知
+                    await NotificationController.create_notification(
+                        NotificationCreate(
+                            source="monitor",
+                            source_id=service.id,
+                            title=f"服务异常告警: {service.service_name}",
+                            content=f"服务检测异常: {service.service_name} ({service.url})",
+                            priority=NotificationPriority.HIGH,
+                            data={
+                                "service_id": service.id,
+                                "service_name": service.service_name,
+                                "url": service.url,
+                                "check_method": service.check_method,
+                                "error": str(e)
+                            }
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f"添加服务异常告警到通知队列失败: {str(e)}")
             
             logger.error(f"监控服务 {service.service_name} 时发生异常: {str(e)}")
             return ServiceTestResult(

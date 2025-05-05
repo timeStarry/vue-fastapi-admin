@@ -11,6 +11,7 @@ from .roles import roles_router
 from .users import users_router
 from .tickets import tickets_router
 from .monitor import monitor_router
+from .notification import notification_router
 
 v1_router = APIRouter()
 
@@ -23,3 +24,4 @@ v1_router.include_router(depts_router, prefix="/dept", dependencies=[DependPermi
 v1_router.include_router(auditlog_router, prefix="/auditlog", dependencies=[DependPermisson])
 v1_router.include_router(tickets_router, prefix="/ticket", dependencies=[DependPermisson])
 v1_router.include_router(monitor_router, prefix="/monitor", dependencies=[DependPermisson])
+v1_router.include_router(notification_router, prefix="/notification", dependencies=[DependPermisson])
