@@ -199,12 +199,20 @@ async def init_db():
         logger.warning("unable to retrieve model history from database, model history will be created from scratch")
         shutil.rmtree("migrations")
         await command.init_db(safe=True)
+    except Exception as e:
+        if "Alter column comment is unsupported in SQLite" in str(e):
+            logger.warning("忽略 SQLite 不支持的列注释修改错误")
+        else:
+            raise
 
     try:
         await command.upgrade(run_in_transaction=True)
     except Exception as e:
+        # 处理SQLite注释错误
+        if "Alter column comment is unsupported in SQLite" in str(e):
+            logger.warning("SQLite 不支持修改列注释，跳过此操作")
         # 处理AI表相关错误或其他迁移错误
-        if "no such table: main.ai_knowledge_base" in str(e):
+        elif "no such table: main.ai_knowledge_base" in str(e):
             logger.warning("AI tables not found in database, fixing migrations...")
             # 这里可以添加修复代码，例如创建临时表或跳过相关迁移
             # 重新尝试升级数据库，但忽略错误的AI表
@@ -212,8 +220,11 @@ async def init_db():
                 # 修复后重新尝试升级
                 await command.upgrade(run_in_transaction=True)
             except Exception as inner_e:
-                logger.error(f"Failed to upgrade database after fix: {inner_e}")
-                raise
+                if "Alter column comment is unsupported in SQLite" in str(inner_e):
+                    logger.warning("SQLite 不支持修改列注释，跳过此操作")
+                else:
+                    logger.error(f"Failed to upgrade database after fix: {inner_e}")
+                    raise
         else:
             logger.error(f"Database upgrade failed: {e}")
             raise

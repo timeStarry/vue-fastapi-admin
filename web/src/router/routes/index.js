@@ -137,6 +137,10 @@ Object.keys(modules).forEach((key) => {
   asyncRoutes.push(modules[key].default)
 })
 
+// 确保aiRoute被添加到路由列表中
+import aiRoute from './modules/ai.js'
+asyncRoutes.push(aiRoute)
+
 // 加载 views 下每个模块的 index.vue 文件
 const vueModules = import.meta.glob('@/views/**/index.vue')
 
