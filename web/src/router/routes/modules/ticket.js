@@ -25,7 +25,7 @@ const routes = {
     {
       path: 'list',
       name: 'TicketList',
-      component: () => import('@/views/ticket/index.vue'),
+      component: () => import('@/views/ticket/list/index.vue'),
       meta: {
         title: '工单列表',
       },
@@ -33,7 +33,7 @@ const routes = {
     {
       path: 'dashboard',
       name: 'TicketDashboard',
-      component: () => import('@/views/ticket/dashboard.vue'),
+      component: () => import('@/views/ticket/dashboard/index.vue'),
       meta: {
         title: '工单面板',
       },
@@ -41,7 +41,7 @@ const routes = {
     {
       path: 'process',
       name: 'TicketProcess',
-      component: () => import('@/views/ticket/process.vue'),
+      component: () => import('@/views/ticket/process/index.vue'),
       meta: {
         title: '工单处理',
         hidden: true, // 在菜单中隐藏

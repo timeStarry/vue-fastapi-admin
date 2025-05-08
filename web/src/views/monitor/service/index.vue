@@ -248,8 +248,14 @@ const getStatusText = (status) => {
 
 // 服务类型文本映射
 const getServiceTypeText = (type) => {
-  const option = serviceTypeOptions.find(item => item.value === type)
-  return option ? option.label : type
+  const map = {
+    web: 'Web服务',
+    api: 'API服务',
+    database: '数据库服务',
+    cache: '缓存服务',
+    other: '其他',
+  }
+  return map[type] || type
 }
 
 // 检测方法文本映射
@@ -261,12 +267,7 @@ const getCheckMethodText = (method) => {
 // 表格列定义
 const columns = [
   { title: '服务名称', key: 'service_name' },
-  { title: '服务URL', key: 'url', ellipsis: true },
-  { 
-    title: '服务类型', 
-    key: 'service_type',
-    render: (row) => getServiceTypeText(row.service_type)
-  },
+  { title: '服务URL', key: 'url' },
   {
     title: '状态',
     key: 'status',
@@ -280,8 +281,15 @@ const columns = [
       )
     },
   },
-  { title: '响应时间', key: 'last_response_time', render: (row) => row.last_response_time ? `${row.last_response_time} ms` : '-' },
-  { title: '最后检测', key: 'last_check_time' },
+  { 
+    title: '服务类型', 
+    key: 'service_type',
+    render(row) {
+      return getServiceTypeText(row.service_type)
+    }
+  },
+  { title: '最后响应时间', key: 'last_response_time', render: (row) => row.last_response_time ? `${row.last_response_time} ms` : '暂无数据' },
+  { title: '最后检测时间', key: 'last_check_time' },
   {
     title: '操作',
     key: 'actions',
@@ -304,6 +312,15 @@ const columns = [
               onClick: () => handleCheckService(row),
             },
             { default: () => '检测' }
+          ),
+          h(
+            NButton,
+            {
+              size: 'small',
+              type: 'error',
+              onClick: () => handleDelete(row),
+            },
+            { default: () => '删除' }
           ),
         ],
       })
@@ -468,7 +485,7 @@ const handlePageSizeChange = (pageSize) => {
 const handleDetail = async (row) => {
   try {
     loading.value = true
-    const serviceData = await api.getServiceById({ service_id: row.id })
+    const serviceData = await api.getServiceById(row.id)
     currentService.value = serviceData.data || {}
     showDetail.value = true
     

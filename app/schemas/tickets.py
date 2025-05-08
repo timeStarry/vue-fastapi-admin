@@ -89,4 +89,23 @@ class TicketStatisticsResponse(BaseModel):
     trend_data: List[dict] = Field(..., description="趋势数据")
     process_time: List[dict] = Field(..., description="处理时长")
     assignee_workload: List[dict] = Field(..., description="处理人工作量")
-    pending_tickets: List[dict] = Field(..., description="待处理工单") 
+    pending_tickets: List[dict] = Field(..., description="待处理工单")
+
+
+# 添加智能工单生成模型
+class GenerateTicketRequest(BaseModel):
+    """智能生成工单请求"""
+    description: str = Field(..., description="工单描述", example="主服务器CPU使用率过高")
+
+
+class TicketGenerateResponse(BaseModel):
+    """工单生成响应"""
+    ticket_no: str
+    title: str
+    description: str
+    type: str
+    status: str = "pending"
+    priority: str
+    expected_time: Optional[datetime] = None
+    assignee_id: Optional[int] = None
+    creator_id: int 

@@ -13,7 +13,7 @@
       <footer flex justify-end>
         <slot name="footer">
           <n-button @click="show = false">取消</n-button>
-          <n-button :loading="loading" ml-20 type="primary" @click="emit('save')">保存</n-button>
+          <n-button :loading="loading" ml-20 type="primary" @click="handleSave">保存</n-button>
         </slot>
       </footer>
     </template>
@@ -44,7 +44,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:visible', 'onSave'])
+const emit = defineEmits(['update:visible', 'save', 'onSave'])
 const show = computed({
   get() {
     return props.visible
@@ -53,4 +53,10 @@ const show = computed({
     emit('update:visible', v)
   },
 })
+
+// 处理保存按钮点击
+function handleSave() {
+  console.log('CrudModal: 保存按钮点击')
+  emit('save')
+}
 </script>

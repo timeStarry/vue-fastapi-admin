@@ -23,7 +23,7 @@ v1_router.include_router(menus_router, prefix="/menu", dependencies=[DependPermi
 v1_router.include_router(apis_router, prefix="/api", dependencies=[DependPermisson])
 v1_router.include_router(depts_router, prefix="/dept", dependencies=[DependPermisson])
 v1_router.include_router(auditlog_router, prefix="/auditlog", dependencies=[DependPermisson])
-v1_router.include_router(tickets_router, prefix="/ticket", dependencies=[DependPermisson])
+v1_router.include_router(tickets_router, prefix="/tickets", dependencies=[DependPermisson])
 v1_router.include_router(monitor_router, prefix="/monitor", dependencies=[DependPermisson])
 v1_router.include_router(notification_router, prefix="/notification", dependencies=[DependPermisson])
 v1_router.include_router(agno_router, prefix="/agno", dependencies=[DependPermisson])

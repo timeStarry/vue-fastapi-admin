@@ -2,7 +2,10 @@ from typing import List, Optional, Dict, Any
 import json
 import io
 import sys
+import logging
+from datetime import datetime
 from contextlib import redirect_stdout
+from fastapi import HTTPException
 
 from tortoise.transactions import in_transaction
 
@@ -487,6 +490,319 @@ class ConversationController:
         
         # 返回拼接的上下文
         return "\n\n".join(contexts)
+
+
+class AgnoController:
+    """AI助手总控制器"""
+    kb_controller = KnowledgeBaseController()
+    doc_controller = DocumentController()
+    assistant_controller = AssistantController()
+    tool_controller = ToolController()
+    conversation_controller = ConversationController()
+
+    # 添加工单生成方法
+    @staticmethod
+    async def generate_ticket_data(description: str) -> Dict[str, Any]:
+        """调用AI助手生成工单数据"""
+        logger = logging.getLogger("uvicorn")
+        
+        # 读取提示词模板
+        try:
+            with open("ticket_prompt.md", "r", encoding="utf-8") as f:
+                prompt_template = f.read()
+        except FileNotFoundError:
+            # 如果找不到文件，使用内置的简化提示词
+            logger.warning("ticket_prompt.md not found, using simplified prompt")
+            prompt_template = """
+            你是一个IT运维助手，根据描述生成工单信息。返回JSON格式，包含以下字段：
+            title, description, type (fault/task/request), 
+            status (pending), priority (critical/high/medium/low), 
+            expected_time (ISO格式), assignee_id (可选)
+            
+            重要：只返回JSON对象，不要包含任何其他文本或解释。
+            """
+        
+        # 构建系统提示词和用户输入
+        system_prompt = prompt_template
+        user_input = description
+        
+        # 与AI助手对话
+        assistant = await Assistant.filter(is_active=True).first()
+        if not assistant:
+            # 如果没有激活的助手，使用回退方案生成基本工单
+            logger.warning("未找到可用的AI助手，使用默认工单数据")
+            return {
+                "title": f"工单请求: {description[:30]}...",
+                "description": description,
+                "type": "task",
+                "status": "pending",
+                "priority": "medium",
+                "expected_time": datetime.now().isoformat()
+            }
+        
+        try:
+            # 调用AI接口
+            try:
+                completion = await AgnoController._call_llm(
+                    system_prompt=system_prompt,
+                    user_prompt=user_input,
+                    assistant=assistant
+                )
+                
+                logger.debug(f"AI生成的原始响应: {completion}")
+                
+                # _call_llm方法现在已经确保返回有效的JSON字符串
+                ticket_data = json.loads(completion)
+            except (json.JSONDecodeError, Exception) as e:
+                logger.error(f"AI响应处理错误: {str(e)}")
+                # 使用基本工单数据作为回退方案
+                return {
+                    "title": f"工单请求: {description[:30]}..." if len(description) > 30 else description,
+                    "description": description,
+                    "type": "task",
+                    "status": "pending",
+                    "priority": "medium",
+                    "expected_time": datetime.now().isoformat()
+                }
+            
+            # 验证必要字段
+            required_fields = ["title", "description", "type", "priority"]
+            for field in required_fields:
+                if field not in ticket_data:
+                    logger.warning(f"AI生成的工单数据缺少必要字段: {field}，将使用默认值")
+                    # 设置默认值
+                    if field == "title":
+                        ticket_data["title"] = f"工单请求: {description[:30]}..." if len(description) > 30 else description
+                    elif field == "description":
+                        ticket_data["description"] = description
+                    elif field == "type":
+                        ticket_data["type"] = "task"
+                    elif field == "priority":
+                        ticket_data["priority"] = "medium"
+            
+            # 确保字段类型正确
+            if ticket_data.get("expected_time") and not isinstance(ticket_data["expected_time"], str):
+                ticket_data["expected_time"] = datetime.now().isoformat()
+            elif not ticket_data.get("expected_time"):
+                # 如果没有expected_time字段，添加一个默认值
+                ticket_data["expected_time"] = datetime.now().isoformat()
+            
+            # 移除AI可能添加的工单号，由系统生成
+            if "ticket_no" in ticket_data:
+                del ticket_data["ticket_no"]
+                
+            # 确保状态为pending
+            ticket_data["status"] = "pending"
+            
+            # 验证工单类型是否合法
+            valid_types = ["fault", "task", "request", "resource", "config", "maintenance", "emergency"]
+            if ticket_data.get("type") not in valid_types:
+                ticket_data["type"] = "task"  # 默认为task类型
+                
+            # 验证优先级是否合法
+            valid_priorities = ["critical", "high", "medium", "low", "urgent"]
+            if ticket_data.get("priority") not in valid_priorities:
+                ticket_data["priority"] = "medium"  # 默认为medium优先级
+            
+            # 限制标题长度
+            if len(ticket_data.get("title", "")) > 100:
+                ticket_data["title"] = ticket_data["title"][:97] + "..."
+                
+            # 确保description不为空
+            if not ticket_data.get("description"):
+                ticket_data["description"] = description
+                
+            return ticket_data
+        except Exception as e:
+            logger.error(f"生成工单数据错误: {str(e)}")
+            # 返回基本工单数据而不是抛出异常
+            return {
+                "title": f"工单请求: {description[:30]}..." if len(description) > 30 else description,
+                "description": description,
+                "type": "task",
+                "status": "pending",
+                "priority": "medium",
+                "expected_time": datetime.now().isoformat()
+            }
+    
+    @staticmethod
+    async def _call_llm(system_prompt: str, user_prompt: str, assistant: Assistant) -> str:
+        """调用LLM模型获取响应"""
+        # 使用uvicorn的日志器，确保日志格式一致
+        logger = logging.getLogger("uvicorn")
+        
+        try:
+            # 创建Agent实例（使用和ConversationController._create_agent相同的逻辑）
+            # 获取配置
+            config = assistant.configuration or {}
+            
+            # 检查是否使用ChatAnywhere API
+            use_chatanywhere = config.get('use_chatanywhere', False)
+            
+            if use_chatanywhere:
+                # 使用ChatAnywhere API
+                api_key = config.get('api_key', '')
+                model_id = assistant.model_id  # 如 "deepseek", "gpt-3.5-turbo", "gpt-4o-mini"
+                
+                model = OpenAIChat(
+                    id=model_id,
+                    api_key=api_key,
+                    base_url="https://api.chatanywhere.tech/v1"
+                )
+            else:
+                # 回退到原来的Ollama
+                from agno.models.ollama import Ollama
+                model_kwargs = {}
+                if assistant.model_host:
+                    model_kwargs["host"] = assistant.model_host
+                    
+                model = Ollama(id=assistant.model_id, **model_kwargs)
+            
+            # 根据Agno官方文档，正确创建Agent
+            # 使用description和instructions来构建系统消息
+            
+            # 从系统提示词中提取基本描述
+            description = "你是一个专业的IT运维助手，负责根据用户的简短描述生成工单基本信息。"
+            
+            # 定义明确的指令列表，只关注核心字段
+            instructions = [
+                "你需要生成一个JSON格式的对象，仅包含以下四个核心字段：title、description、type、priority",
+                "title: 简短明确的工单标题，20字以内",
+                "description: 详细的工单描述，包含问题的具体表现、影响范围等信息",
+                "type: 工单类型，必须是以下值之一：fault(故障报修), resource(资源申请), config(配置变更), maintenance(日常维护), emergency(紧急处理)",
+                "priority: 工单优先级，必须是以下值之一: low(低), medium(中), high(高), urgent(紧急)",
+                "不要生成其他字段，如expected_time、assignee_id等，这些将由系统自动生成",
+                "不要包含任何代码块标记或额外文本，仅返回JSON数据"
+            ]
+            
+            # 添加精简的提示词内容作为额外上下文
+            additional_context = """
+根据描述判断工单类型：
+- 含有"故障"、"错误"、"无法访问"、"失败"等词汇，判断为 fault
+- 含有"申请"、"请求"、"需要"、"资源"等词汇，判断为 resource
+- 含有"更新"、"维护"、"检查"等词汇，判断为 maintenance
+- 含有"配置"、"设置"、"修改"等词汇，判断为 config
+- 含有"紧急"、"立即"、"严重"等词汇，判断为 emergency
+
+根据描述判断优先级：
+- 含有"紧急"、"严重"、"立即"、"无法工作"等词汇，判断为 urgent
+- 含有"重要"、"尽快"、"影响使用"等词汇，判断为 high
+- 含有"优化"、"改进"等词汇，判断为 medium
+- 默认为 low
+"""
+            
+            # 创建Agent，禁用markdown避免格式化干扰
+            agent = Agent(
+                model=model,
+                description=description,
+                instructions=instructions,
+                additional_context=additional_context,
+                markdown=False
+            )
+            
+            # 增强用户提示，明确要求生成四个核心字段
+            formatted_user_prompt = f"根据以下描述，生成一个包含title、description、type、priority四个字段的工单：{user_prompt}"
+            
+            # 使用简单的run调用，不传递history
+            logger.debug(f"开始调用AI助手生成工单，输入: {user_prompt[:100]}...")
+            response = agent.run(formatted_user_prompt)
+            
+            # 获取响应内容
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            logger.debug(f"AI助手返回原始响应: {response_text[:200]}...")
+            
+            # 清理响应文本，确保是有效的JSON
+            response_text = response_text.strip()
+            
+            # 移除可能的Markdown JSON代码块标记
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            elif response_text.startswith("```"):
+                response_text = response_text[3:]
+            
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+                
+            response_text = response_text.strip()
+            
+            # 尝试解析JSON来验证格式是否正确
+            try:
+                json_data = json.loads(response_text)
+                # 确保只包含需要的四个字段，移除多余字段
+                result = {
+                    "title": json_data.get("title", ""),
+                    "description": json_data.get("description", ""),
+                    "type": json_data.get("type", "task"),
+                    "priority": json_data.get("priority", "medium")
+                }
+                
+                # 验证字段值是否有效
+                valid_types = ["fault", "resource", "config", "maintenance", "emergency"]
+                if result["type"] not in valid_types:
+                    result["type"] = "task"
+                
+                valid_priorities = ["low", "medium", "high", "urgent"]
+                if result["priority"] not in valid_priorities:
+                    result["priority"] = "medium"
+                
+                logger.info(f"成功生成工单核心数据: {result}")
+                return json.dumps(result, ensure_ascii=False)
+                
+            except json.JSONDecodeError:
+                # 尝试查找文本中的JSON部分
+                import re
+                json_pattern = r'(\{[\s\S]*\})'
+                match = re.search(json_pattern, response_text)
+                if match:
+                    try:
+                        json_part = match.group(1)
+                        # 检验找到的JSON是否有效
+                        json_data = json.loads(json_part)
+                        # 同样确保只包含需要的四个字段
+                        result = {
+                            "title": json_data.get("title", ""),
+                            "description": json_data.get("description", ""),
+                            "type": json_data.get("type", "task"),
+                            "priority": json_data.get("priority", "medium")
+                        }
+                        
+                        # 验证字段值是否有效
+                        valid_types = ["fault", "resource", "config", "maintenance", "emergency"]
+                        if result["type"] not in valid_types:
+                            result["type"] = "task"
+                        
+                        valid_priorities = ["low", "medium", "high", "urgent"]
+                        if result["priority"] not in valid_priorities:
+                            result["priority"] = "medium"
+                        
+                        logger.info(f"通过正则提取成功获取工单核心数据: {result}")
+                        return json.dumps(result, ensure_ascii=False)
+                    except (json.JSONDecodeError, Exception) as e:
+                        logger.error(f"提取的JSON数据无效: {str(e)}")
+                        raise
+                else:
+                    raise  # 如果找不到JSON部分，重新抛出异常
+                
+        except json.JSONDecodeError as e:
+            # 如果不是有效的JSON，直接构建JSON格式
+            logger.error(f"AI返回的不是有效JSON: {str(e)}, 原始内容: {response_text[:200]}...")
+            
+            # 构建简单的工单数据，确保响应格式始终是有效的JSON
+            title = user_prompt[:20] + "..." if len(user_prompt) > 20 else user_prompt
+            
+            # 只包含四个核心字段
+            ticket_json = {
+                "title": f"工单: {title}",
+                "description": user_prompt,
+                "type": "fault" if any(kw in user_prompt.lower() for kw in ["故障", "错误", "问题", "无法"]) else "task",
+                "priority": "medium"
+            }
+            
+            logger.info(f"使用回退机制生成工单核心数据")
+            return json.dumps(ticket_json, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"LLM调用错误: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"AI服务调用失败: {str(e)}")
 
 
 # 实例化控制器

@@ -265,6 +265,15 @@ const columns = [
             },
             { default: () => 'Ping' }
           ),
+          h(
+            NButton,
+            {
+              size: 'small',
+              type: 'error',
+              onClick: () => handleDelete(row),
+            },
+            { default: () => '删除' }
+          ),
         ],
       })
     },

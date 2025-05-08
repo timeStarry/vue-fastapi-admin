@@ -45,25 +45,30 @@ export default {
   
   // 工单模块API
   // 工单列表与基础操作
-  getTicketList: (params = {}) => request.get('/ticket/list', { params }),
-  getTicketById: (params = {}) => request.get('/ticket/get', { params }),
-  createTicket: (data = {}) => request.post('/ticket/create', data),
-  updateTicket: (data = {}) => request.post('/ticket/update', data),
-  deleteTicket: (params = {}) => request.delete('/ticket/delete', { params }),
+  getTicketList: (params = {}) => request.get('/tickets/list', { params }),
+  getTicketById: (params = {}) => request.get('/tickets/get', { params }),
+  createTicket: (data = {}) => request.post('/tickets/create', data),
+  updateTicket: (data = {}) => request.post('/tickets/update', data),
+  deleteTicket: (params = {}) => request.delete('/tickets/delete', { params }),
+  
+  // 工单智能生成
+  generateTicket: (data = {}) => request.post('/tickets/generate', data, {
+    timeout: 60000, // 增加到60秒，因为AI生成可能需要更长时间
+  }),
   
   // 工单处理操作
-  processTicket: (data = {}) => request.post('/ticket/process', data),
-  transferTicket: (data = {}) => request.post('/ticket/transfer', data),
+  processTicket: (data = {}) => request.post('/tickets/process', data),
+  transferTicket: (data = {}) => request.post('/tickets/transfer', data),
   
   // 工单附件上传
   uploadAttachment: (data = {}, onUploadProgress) => 
-    request.post('/ticket/upload', data, { 
+    request.post('/tickets/upload', data, { 
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress,
     }),
   
   // 工单统计数据
-  getTicketStatistics: (params = {}) => request.get('/ticket/statistics', { params }),
+  getTicketStatistics: (params = {}) => request.get('/tickets/statistics', { params }),
   
   // 监控模块API
   // 主机监控相关

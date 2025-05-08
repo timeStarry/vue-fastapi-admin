@@ -238,4 +238,27 @@ async def get_ticket_statistics(
         return Success(data={"assignee_workload": data.get("assignee_workload", [])})
     
     logger.debug("返回全部统计数据")
-    return Success(data=data) 
+    return Success(data=data)
+
+
+@router.post("/generate", summary="智能生成工单")
+async def generate_ticket(
+    request: GenerateTicketRequest,
+    current_user = Depends(AuthControl.is_authed)
+) -> dict:
+    """智能生成工单信息
+    
+    根据用户输入的描述，使用AI助手自动生成工单信息
+    
+    参数:
+    - description: 工单描述，例如"主服务器CPU使用率过高"
+    
+    返回:
+    - 包含工单信息的JSON对象
+    """
+    ticket_data = await ticket_controller.generate_ticket(
+        description=request.description, 
+        user_id=current_user.id
+    )
+    
+    return Success(data=ticket_data) 

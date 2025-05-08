@@ -1,8 +1,9 @@
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Tuple, Dict, Any
+import json
 
 from tortoise.expressions import Q
 from tortoise.transactions import atomic
@@ -10,6 +11,7 @@ from tortoise.transactions import atomic
 from app.models.ticket import Ticket, TicketRecord, TicketAttachment
 from app.models.admin import User
 from app.core.exceptions import CustomException
+from app.controllers.agno import AgnoController
 
 
 class TicketController:
@@ -557,6 +559,59 @@ class TicketController:
             "assignee_workload": assignee_workload,
             "pending_tickets": pending_tickets,
         }
+    
+    @staticmethod
+    async def generate_ticket(description: str, user_id: int) -> Dict[str, Any]:
+        """智能生成工单信息"""
+        # 调用AI助手生成工单信息 - 只返回四个核心字段
+        ticket_data = await AgnoController.generate_ticket_data(description)
+        
+        # 生成工单号（T + 年月日 + 两位序号）
+        today = datetime.now().date()
+        today_str = today.strftime("%Y%m%d")
+        
+        # 查询今天已有的工单数量
+        count = await Ticket.filter(ticket_no__startswith=f"T{today_str}").count()
+        ticket_no = f"T{today_str}{(count+1):02d}"
+        
+        # 如果是JSON字符串，转换为字典
+        if isinstance(ticket_data, str):
+            try:
+                ticket_data = json.loads(ticket_data)
+            except json.JSONDecodeError:
+                ticket_data = {
+                    "title": f"工单: {description[:20]}",
+                    "description": description,
+                    "type": "task",
+                    "priority": "medium"
+                }
+        
+        # 计算预期完成时间
+        expected_time = datetime.now() + {
+            "urgent": timedelta(hours=4),
+            "high": timedelta(hours=24),
+            "medium": timedelta(days=3),
+            "low": timedelta(days=7)
+        }.get(ticket_data.get("priority", "medium"), timedelta(days=3))
+        
+        # 补充其他必要字段，注意转换datetime为字符串
+        final_data = {
+            # 保留AI生成的四个核心字段
+            "title": ticket_data.get("title", ""),
+            "description": ticket_data.get("description", ""),
+            "type": ticket_data.get("type", "task"),
+            "priority": ticket_data.get("priority", "medium"),
+            
+            # 添加系统字段
+            "ticket_no": ticket_no,
+            "status": "pending",
+            "creator_id": user_id,
+            
+            # 将datetime转换为ISO格式字符串
+            "expected_time": expected_time.isoformat()
+        }
+        
+        return final_data
 
 
 ticket_controller = TicketController() 

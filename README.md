@@ -134,4 +134,27 @@ pnpm dev
 ## 许可证
 本项目采用 MIT 许可证，详见 [LICENSE](LICENSE) 文件。
 
+## 数据修复工具
+
+系统提供了以下SQL脚本用于数据修复：
+
+1. `restore_menu.sql` - 从备份数据库恢复菜单数据
+2. `demo_data.sql` - 生成演示数据（监控服务、工单、通知、智能助手等）
+3. `fix_data.sql` - 修复数据异常（通知队列状态、监控服务外键等）
+
+使用方法：
+
+```bash
+# 恢复菜单数据
+sqlite3 < restore_menu.sql
+
+# 添加演示数据
+sqlite3 < demo_data.sql
+
+# 修复数据异常
+sqlite3 < fix_data.sql
+```
+
+> 注意：执行这些脚本前，建议先备份数据库：`cp db.sqlite3 db.sqlite3.backup_$(date +%Y%m%d_%H%M%S)`
+
 
