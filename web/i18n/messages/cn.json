@@ -1,6 +1,6 @@
 {
   "lang": "中文",
-  "app_name": "Vue FastAPI Admin",
+  "app_name": "智能网络运维",
   "header": {
     "label_profile": "个人信息",
     "label_logout": "退出登录",
@@ -17,8 +17,11 @@
     },
     "workbench": {
       "label_workbench": "工作台",
-      "text_hello": "hello, {username}",
+      "text_hello": "你好, {username}",
       "text_welcome": "今天又是元气满满的一天!",
+      "label_tickets": "工单数量",
+      "label_alerts": "告警数量",
+      "label_users": "用户数量",
       "label_number_of_items": "项目数",
       "label_upcoming": "待办",
       "label_information": "消息",
@@ -49,6 +52,12 @@
     "errors": {
       "label_error": "错误页",
       "text_back_to_home": "返回首页"
+    },
+    "agno": {
+      "label_assistant": "助手管理",
+      "label_chat": "对话",
+      "label_chat_detail": "对话详情",
+      "label_knowledge": "知识库"
     }
   },
   "common": {

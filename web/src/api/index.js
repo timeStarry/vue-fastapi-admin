@@ -1,6 +1,7 @@
 import { request } from '@/utils'
 import monitor from './monitor'
 import notification from './notification'
+import * as agno from './agno'
 
 export default {
   login: (data) => request.post('/base/access_token', data, { noNeedToken: true }),
@@ -97,4 +98,7 @@ export default {
   
   // 通知模块API
   ...notification,
+  
+  // AI助手模块API
+  ...agno,
 }

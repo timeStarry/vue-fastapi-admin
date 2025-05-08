@@ -1,6 +1,6 @@
 {
   "lang": "English",
-  "app_name": "Vue FastAPI Admin",
+  "app_name": "Smart Network Operation and Maintenance",
   "header": {
     "label_profile": "Profile",
     "label_logout": "Logout",
@@ -17,8 +17,11 @@
     },
     "workbench": {
       "label_workbench": "Workbench",
-      "text_hello": "hello, {username}",
-      "text_welcome": "Today is another day full of energy!",
+      "text_hello": "Hello, {username}",
+      "text_welcome": "Welcome to the intelligent operation and maintenance system!",
+      "label_tickets": "Tickets",
+      "label_alerts": "Alerts",
+      "label_users": "Users",
       "label_number_of_items": "Number of items",
       "label_upcoming": "Upcoming",
       "label_information": "Information",
@@ -47,8 +50,14 @@
       "message_password_confirmation_diff": "Two password inputs are inconsistent"
     },
     "errors": {
-      "label_error": "Error",
-      "text_back_to_home": "Back to home"
+      "label_error": "Error Page",
+      "text_back_to_home": "Back to Home"
+    },
+    "agno": {
+      "label_assistant": "Assistants",
+      "label_chat": "Chat",
+      "label_chat_detail": "Chat Detail",
+      "label_knowledge": "Knowledge Base"
     }
   },
   "common": {
