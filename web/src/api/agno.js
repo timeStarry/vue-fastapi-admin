@@ -3,6 +3,15 @@ import { request } from '@/utils/http'
 // API基础路径前缀 - 由于request已经配置了baseURL为/api/v1，这里只需要使用相对路径
 const API_PREFIX = '/agno';
 
+// 添加系统报告API
+export function generateSystemReport(data) {
+  return request({
+    url: `${API_PREFIX}/report`,
+    method: 'post',
+    data
+  })
+}
+
 // 助手相关API
 export function getAssistants() {
   return request({

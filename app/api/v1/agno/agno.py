@@ -5,13 +5,15 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import asyncio
 import json
+import logging
 
 from app.controllers.agno import (
     knowledge_base_controller, 
     document_controller,
     assistant_controller, 
     tool_controller,
-    conversation_controller
+    conversation_controller,
+    AgnoController
 )
 from app.models.agno_agent import (
     KnowledgeBase_Pydantic, 
@@ -84,6 +86,20 @@ class ChatResponse(BaseModel):
     response: str
     thinking: Optional[str] = None
     tools_used: List[str] = []
+
+# 系统报告相关模型
+class SystemReportRequest(BaseModel):
+    system_info: Dict[str, Any]
+    ticket_info: Dict[str, Any]
+    service_status: List[Dict[str, Any]] = []
+    recent_alerts: List[Dict[str, Any]] = []
+    recent_logs: List[Dict[str, Any]] = []
+    assistants: List[Dict[str, Any]] = []
+
+class SystemReportResponse(BaseModel):
+    title: str
+    content: str
+    created_at: Optional[str] = None
 
 # 知识库管理路由
 @router.post("/knowledge-bases", summary="创建知识库")
@@ -558,4 +574,79 @@ async def stream_chat_with_assistant_get(
     return StreamingResponse(
         stream_generator(conversation_id, content),
         media_type="text/event-stream"
-    ) 
+    )
+
+# 添加系统报告API端点
+@router.post("/report", summary="生成系统智能报告")
+async def generate_system_report(data: SystemReportRequest):
+    """调用AI助手生成系统智能报告"""
+    try:
+        # 记录日志
+        logger = logging.getLogger("uvicorn")
+        logger.info("开始处理系统报告生成请求")
+        
+        # 记录请求数据结构
+        logger.info(f"请求数据结构: system_info类型: {type(data.system_info)}, ticket_info类型: {type(data.ticket_info)}")
+        logger.info(f"请求数据项数: system_info={len(data.system_info) if isinstance(data.system_info, dict) else 'not dict'}, "
+                  f"ticket_info={len(data.ticket_info) if isinstance(data.ticket_info, dict) else 'not dict'}, "
+                  f"service_status={len(data.service_status)}, "
+                  f"recent_alerts={len(data.recent_alerts)}, "
+                  f"recent_logs={len(data.recent_logs)}, "
+                  f"assistants={len(data.assistants)}")
+        
+        # 将请求数据转换为字典
+        request_data = data.model_dump()
+        logger.info(f"转换后的请求数据类型: {type(request_data)}")
+        
+        # 将请求数据传递给控制器
+        logger.info("开始调用 AgnoController.generate_system_report")
+        try:
+            report = await AgnoController.generate_system_report(request_data)
+            logger.info(f"报告生成结果类型: {type(report)}")
+            if isinstance(report, dict):
+                logger.info(f"报告包含的键: {list(report.keys())}")
+                # 检查每个值的类型
+                for key, value in report.items():
+                    logger.info(f"键 '{key}' 的值类型: {type(value)}")
+            else:
+                logger.error(f"报告不是字典类型: {report}")
+        except Exception as e:
+            logger.error(f"调用 generate_system_report 时发生异常: {str(e)}", exc_info=True)
+            raise
+        
+        # 验证返回的报告数据格式是否正确
+        if not isinstance(report, dict):
+            logger.error(f"报告数据格式错误: {type(report)}")
+            return Fail(code=500, msg="报告生成失败: 返回数据格式错误")
+            
+        # 确保所有字段都存在
+        if "title" not in report:
+            logger.error("报告数据缺少title字段")
+            report["title"] = "网络运行状况智能分析报告"
+            
+        if "content" not in report:
+            logger.error("报告数据缺少content字段")
+            report["content"] = "# 网络运行状况智能分析报告\n\n生成报告时发生错误: 内容缺失。"
+            
+        if "created_at" not in report:
+            logger.error("报告数据缺少created_at字段")
+            from datetime import datetime
+            report["created_at"] = datetime.now().isoformat()
+        
+        logger.info("系统报告生成成功")
+        logger.info(f"返回前的报告数据: title={report['title'][:20]}..., content长度={len(report['content'])}, created_at={report['created_at']}")
+        return Success(data=report)
+    except Exception as e:
+        # 记录详细错误信息
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"生成系统报告失败: {str(e)}", exc_info=True)
+        
+        # 返回错误响应，携带默认报告数据
+        from datetime import datetime
+        default_report = {
+            "title": "网络运行状况智能分析报告",
+            "content": f"# 网络运行状况智能分析报告\n\n生成报告时发生错误: {str(e)}",
+            "created_at": datetime.now().isoformat()
+        }
+        logger.info("返回默认报告数据")
+        return Success(data=default_report) 
