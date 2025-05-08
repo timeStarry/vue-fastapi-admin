@@ -29,29 +29,23 @@
         </div>
       </n-card>
 
-      <!-- 智能报告生成 -->
-      <n-card title="系统智能运行报告" size="small" mt-15 rounded-10>
+      <!-- 系统摘要 (原智能报告) -->
+      <n-card title="系统摘要" size="small" mt-15 rounded-10>
         <template #header-extra>
-          <n-button text type="primary" :loading="generatingReport" @click="generateReport">
+          <n-button text type="primary" :loading="generatingReport" @click="refreshSystemSummary">
             <template #icon>
               <n-icon><TheIcon icon="material-symbols:refresh" /></n-icon>
             </template>
-            生成报告
+            刷新摘要
           </n-button>
         </template>
         <div v-if="!systemReport && !generatingReport" class="text-center py-10">
-          <n-empty description="点击'生成报告'获取系统运行状态">
-            <template #icon>
-              <n-icon size="48"><TheIcon icon="material-symbols:analytics-outline" /></n-icon>
-            </template>
-            <template #extra>
-              <n-button type="primary" @click="generateReport">生成报告</n-button>
-            </template>
-          </n-empty>
+          <n-spin size="large" />
+          <p mt-4>正在准备系统摘要...</p>
         </div>
         <div v-else-if="generatingReport" class="text-center py-10">
           <n-spin size="large" />
-          <p mt-4>正在分析系统数据，生成智能报告...</p>
+          <p mt-4>正在更新系统摘要...</p>
         </div>
         <div v-else class="report-container">
           <n-timeline>
@@ -240,7 +234,7 @@
 <script setup>
 import { useUserStore } from '@/store'
 import { useI18n } from 'vue-i18n'
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watchEffect } from 'vue'
 import { use } from "echarts/core"
 import api from '@/api'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -633,16 +627,12 @@ async function loadAssistants() {
   }
 }
 
-// 生成智能报告
-async function generateReport() {
+// 生成系统摘要
+async function generateSystemSummary() {
   try {
     generatingReport.value = true;
     
-    // 这里模拟调用AI接口生成报告
-    // 实际开发中应调用后端接口，后端将系统数据传给AI接口生成报告
-    await new Promise(resolve => setTimeout(resolve, 2000)); // 模拟延迟
-    
-    // 使用实际的数据生成报告
+    // 使用实际的数据生成摘要
     const alertCount = dashboardData.value.alertCount || 0;
     const hostCount = dashboardData.value.hostCount || 0;
     const onlineHosts = dashboardData.value.onlineHostCount || 0;
@@ -654,26 +644,67 @@ async function generateReport() {
     const completedTickets = dashboardData.value.completedTickets || 0;
     const assistantCount = assistants.value.length || 0;
     
+    // 计算工单处理率和主机在线率
+    const ticketCompletionRate = ticketCount > 0 ? Math.round((completedTickets / ticketCount) * 100) : 0;
+    const hostOnlineRate = hostCount > 0 ? Math.round((onlineHosts / hostCount) * 100) : 0;
+    
     systemReport.value = {
       summary: `当前系统运行状态良好，共有${hostCount}台主机，${serviceCount}个服务，${userCount}个用户。${alertCount > 0 ? `有${alertCount}个未解决的告警需要处理。` : '暂无告警。'}`,
-      tickets: `工单总数${ticketCount}，其中待处理${pendingTickets}个，已完成${completedTickets}个。${ticketCount > 0 ? '平均处理时间为3.5小时。' : ''}`,
-      monitoring: `系统监控显示${onlineHosts}台主机正常运行${offlineHosts > 0 ? `，${offlineHosts}台离线` : ''}。服务可用性达到${onlineHosts > 0 ? Math.round((onlineHosts / hostCount) * 100) : 0}%。`,
-      ai: `系统已配置${assistantCount}个AI助手${assistantCount > 0 ? '，本周共处理用户请求约300次，平均响应时间2.1秒。' : '。'}`,
-      recommendations: `${alertCount > 0 ? `建议处理${alertCount}个未解决的告警；` : ''}优化系统资源分配；关注工单处理效率，提高系统响应速度。`
+      tickets: `工单总数${ticketCount}个，其中待处理${pendingTickets}个，已完成${completedTickets}个，完成率${ticketCompletionRate}%。${dashboardData.value.avgProcessTime ? `平均处理时间为${dashboardData.value.avgProcessTime}小时。` : ''}`,
+      monitoring: `系统监控显示${onlineHosts}台主机正常运行${offlineHosts > 0 ? `，${offlineHosts}台离线` : ''}。系统可用性达到${hostOnlineRate}%。${alertCount > 0 ? `当前有${alertCount}个告警。` : '所有服务运行正常。'}`,
+      ai: `系统已配置${assistantCount}个AI助手${assistantCount > 0 ? '，在工单处理及系统监控中提供智能辅助。' : '。'}`,
+      recommendations: `${alertCount > 0 ? `建议处理${alertCount}个未解决的告警；` : ''}${pendingTickets > 0 ? `处理${pendingTickets}个待办工单；` : ''}${hostOnlineRate < 100 ? `检查${offlineHosts}台离线主机；` : ''}定期优化系统资源分配，提高系统响应速度。`
     };
   } catch (error) {
-    console.error('生成报告失败:', error);
-    window.$message?.error('生成报告失败');
+    console.error('生成系统摘要失败:', error);
+    window.$message?.error('生成系统摘要失败');
   } finally {
     generatingReport.value = false;
   }
 }
 
+// 添加刷新系统摘要的函数，用于手动刷新
+async function refreshSystemSummary() {
+  // 先刷新数据
+  await Promise.all([
+    loadDashboardData(),
+    loadAuditLogs(),
+    loadAssistants()
+  ]);
+  
+  // 重新生成摘要
+  await generateSystemSummary();
+  window.$message?.success('系统摘要已更新');
+}
+
 // 生命周期钩子
-onMounted(() => {
-  loadDashboardData()
-  loadAuditLogs()
-  loadAssistants()
+onMounted(async () => {
+  // 加载所有数据
+  await Promise.all([
+    loadDashboardData(),
+    loadAuditLogs(),
+    loadAssistants()
+  ]);
+  
+  // 自动生成系统摘要
+  await generateSystemSummary();
+  
+  // 设置监听器，当数据变化时自动更新摘要
+  watchEffect(() => {
+    // 当关键数据发生变化时触发
+    const triggerUpdate = [
+      dashboardData.value.alertCount,
+      dashboardData.value.hostCount,
+      dashboardData.value.ticketCount,
+      assistants.value.length
+    ];
+    
+    // 仅在组件挂载后且数据已初始化时更新
+    if (triggerUpdate.some(val => val !== undefined) && systemReport.value) {
+      console.log('关键数据变化，更新系统摘要');
+      generateSystemSummary();
+    }
+  });
 })
 </script>
 
